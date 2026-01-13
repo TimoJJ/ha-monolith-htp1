@@ -12,5 +12,8 @@ under you Home Assistant configuration directory and restart HA.
 Install via Integrations, add Integration and search for Monoprice.
 Input your HTP-1 IP-address and after few seconds sensors should appear and update.
 
-## State
+## Screens
 
+![Screenshot 1](assets/pic2.png) ![Screenshot 1](assets/pic3.png)
+![Screenshot 1](assets/pic4.png) ![Screenshot 1](assets/pic5.png)
+![Screenshot 1](assets/pic6.png)
