@@ -10,7 +10,7 @@ from .entity import Htp1Entity
 
 
 # -------------------------------------------------------------
-#  HTP-1:n omat kytkimet
+#  HTP-1 switches
 # -------------------------------------------------------------
 SWITCH_DEFINITIONS = [
     {
@@ -45,7 +45,7 @@ SWITCH_DEFINITIONS = [
 
 
 # -------------------------------------------------------------
-#  Luo HTP-1:n omat kytkimet
+#  Define HTP-1 switches
 # -------------------------------------------------------------
 def build_htp1_switches(htp1, entry_id: str):
     entities = []
@@ -65,7 +65,7 @@ def build_htp1_switches(htp1, entry_id: str):
 
 
 # -------------------------------------------------------------
-#  HA alustaa switch-platformin
+#  HA preps switch-platform
 # -------------------------------------------------------------
 async def async_setup_entry(hass, entry, async_add_entities):
     htp1 = hass.data[DOMAIN][entry.entry_id]
@@ -81,7 +81,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 # -------------------------------------------------------------
-#  Varsinainen kytkin
+#  Actual switch
 # -------------------------------------------------------------
 class Htp1Switch(SwitchEntity):
     _attr_has_entity_name = True

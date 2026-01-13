@@ -25,7 +25,7 @@ AVCUI_NUMBERS = [
 
 
 def build_avcui_number_entities(hass, htp1, entry_id: str):
-    """Rakentaa avcui number -entiteetit."""
+
     return [
         Htp1AvcuiNumber(
             hass=hass,
@@ -64,7 +64,7 @@ class Htp1AvcuiNumber(NumberEntity):
         self._command_prefix = command_prefix
         self._key = key
 
-        # persistent store
+
         self._store = Store(
             hass,
             STORAGE_VERSION,
@@ -92,13 +92,13 @@ class Htp1AvcuiNumber(NumberEntity):
 
     @property
     def native_value(self):
-        # Jos arvoa ei ole tallennettu, naytetaan min arvo
+
         if self._current_value is None:
             return self._attr_native_min_value
         return self._current_value
 
     async def async_added_to_hass(self):
-        # lataa aiempi arvo
+
         data = await self._store.async_load()
         if data and self._key in data:
             self._current_value = data[self._key]
@@ -109,11 +109,11 @@ class Htp1AvcuiNumber(NumberEntity):
         value = int(value)
         self._current_value = value
 
-        # laheta komento
+
         cmd = f"{self._command_prefix} {value}"
         await self._htp1.send_avcui(cmd)
 
-        # tallenna storeen
+
         await self._store.async_save({self._key: self._current_value})
 
         self.async_write_ha_state()

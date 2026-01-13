@@ -300,7 +300,7 @@ NUMBER_DEFINITIONS = [
 
 
 # -------------------------------------------------------------
-# Luo HTP-1:n number-entiteetit
+# HTP-1 number-entities
 # -------------------------------------------------------------
 def build_htp1_numbers(htp1, entry_id: str):
     entities = []
@@ -324,7 +324,7 @@ def build_htp1_numbers(htp1, entry_id: str):
 
 
 # -------------------------------------------------------------
-# Platformin setup
+# Platform setup
 # -------------------------------------------------------------
 async def async_setup_entry(hass, entry, async_add_entities):
     htp1 = hass.data[DOMAIN][entry.entry_id]
@@ -338,7 +338,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 # -------------------------------------------------------------
-# Varsinainen NumberEntity
+# NumberEntity
 # -------------------------------------------------------------
 class Htp1Number(NumberEntity):
     _attr_has_entity_name = True

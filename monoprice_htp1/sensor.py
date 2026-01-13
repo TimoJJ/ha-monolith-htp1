@@ -457,7 +457,7 @@ class Htp1Sensor(SensorEntity):
 
     def __init__(
         self,
-        htp1,                           # <-- Tama parametri on pakollinen
+        htp1,                        
         entry_id: str,
         key: str,
         name: str,
@@ -472,7 +472,7 @@ class Htp1Sensor(SensorEntity):
         entity_category=None,
     ):
         """Initialize the sensor."""
-        self._htp1 = htp1               # <-- TaMa RIVI PUUTTUU SINULTA!
+        self._htp1 = htp1            
         self._path = path
         self._value_fn = value_fn
 
@@ -485,13 +485,13 @@ class Htp1Sensor(SensorEntity):
         self._attr_suggested_display_precision = suggested_display_precision
 
         self._attr_entity_registry_enabled_default = entity_registry_enabled_default
-        # Entity category korjaus (toimiva versio)
+
         if isinstance(entity_category, str) and entity_category.lower() == "diagnostic":
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
         elif entity_category == "config":
             self._attr_entity_category = EntityCategory.CONFIG
         else:
-            self._attr_entity_category = entity_category  # None tai jo enum
+            self._attr_entity_category = entity_category
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},

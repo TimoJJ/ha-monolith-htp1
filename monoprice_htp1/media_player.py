@@ -82,6 +82,7 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         htp1.subscribe("/muted", _on_muted)
         htp1.subscribe("/powerIsOn", _on_power)
         htp1.subscribe("/volume", _on_volume)
+        htp1.subscribe("/input", _on_connection)
         htp1.subscribe("#connection", _on_connection)
 
         # seed caches immediately
@@ -124,6 +125,7 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         htp1.subscribe("/muted", _on_muted)
         htp1.subscribe("/powerIsOn", _on_power)
         htp1.subscribe("/volume", _on_volume)
+        htp1.subscribe("/input", _on_connection)
         htp1.subscribe("#connection", _on_connection)
 
         # seed caches immediately
