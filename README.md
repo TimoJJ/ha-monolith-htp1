@@ -9,7 +9,9 @@ HTP-1](https://www.monoprice.com/product?p_id=37887) home theater processor.
 
 Copy the monoprice_htp1 directory into a directory named `custom_components/`
 under you Home Assistant configuration directory and restart HA.
-Install via Integrations, add Integration and search for Monoprice.
+
+Install via Integrations: add Integration and search for Monoprice.
+
 Input your HTP-1 IP-address and after few seconds sensors should appear and update.
 
 ## Screens
