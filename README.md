@@ -1,4 +1,4 @@
-## Home Assistant integration for the Monoprice HTP-1
+## Home Assistant integration for the Monoprice Monolith HTP-1
 
 This repo provides [Home
 Assistant](https://www.home-assistant.io/) integration for the [Monoprice
