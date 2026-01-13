@@ -8,6 +8,5 @@
   "iot_class": "local_push",
   "loggers": ["aiohtp1", "monoprice_htp1"],
   "version": "1.0.0",
-  "icon": "mdi:amplifier",
   "requirements": []
 }
