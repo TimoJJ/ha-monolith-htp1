@@ -1,12 +1,13 @@
 {
   "domain": "monoprice_htp1",
   "name": "Monoprice HTP-1",
-  "codeowners": ["@ross"],
+  "codeowners": ["@timojj"],
   "config_flow": true,
-  "documentation": "https://github.com/ross/ha-monoprice_htp1",
+  "documentation": "no",
   "integration_type": "device",
   "iot_class": "local_push",
   "loggers": ["aiohtp1", "monoprice_htp1"],
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "icon": "mdi:amplifier",
   "requirements": []
 }

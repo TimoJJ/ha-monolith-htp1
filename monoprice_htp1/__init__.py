@@ -1,42 +1,53 @@
 """The Monoprice HTP-1 integration."""
+from __future__ import annotations
 
-from datetime import timedelta
+import asyncio
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, Platform
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .aiohtp1 import Htp1
 from .const import DOMAIN
-from .helpers import async_get_clientsession
+from .aiohtp1 import Htp1
 
-PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
-SCAN_INTERVAL = timedelta(seconds=30)
+PLATFORMS = ["sensor", "number", "switch", "select", "media_player"]
+# PLATFORMS = ["sensor", "number", "switch", "select"]
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Set up Monoprice HTP-1 from a config entry."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    hass.data.setdefault(DOMAIN, {})
 
-    htp1 = Htp1(
-        host=config_entry.data[CONF_HOST], session=async_get_clientsession(hass)
+    session = async_get_clientsession(hass)
+    htp1 = Htp1(entry.data["host"], session)
+
+    # store instance
+    hass.data[DOMAIN][entry.entry_id] = htp1
+
+    # IMPORTANT: establish websocket connection during setup
+    # If the device is not reachable yet, ask Home Assistant to retry.
+    try:
+        await htp1.try_connect()
+    except Exception as err:
+        # cleanup and let HA retry later automatically
+        await htp1.stop()
+        raise ConfigEntryNotReady(f"HTP-1 websocket connect failed: {err}") from err
+
+    async def _shutdown(event):
+        await htp1.stop()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
     )
 
-    await htp1.try_connect()
-
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][config_entry.entry_id] = htp1
-
-    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        config_entry, PLATFORMS
-    )
-    if unload_ok:
-        hass.data[DOMAIN].pop(config_entry.entry_id)
 
-    return unload_ok
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    htp1 = hass.data[DOMAIN].pop(entry.entry_id)
+    await htp1.stop()
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

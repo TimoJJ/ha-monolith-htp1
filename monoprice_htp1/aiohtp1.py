@@ -6,271 +6,292 @@ from contextlib import suppress
 from json import dumps, loads
 from logging import getLogger
 from typing import Any
+from .trigger_manager import TriggerManager
 
 import aiodns
 import aiohttp
 
 
 class AioHtp1Exception(Exception):
-    """Base error for aiohtp1."""
+    pass
 
 
 class ConnectionException(AioHtp1Exception):
-    """Error connecting to HTP-1."""
+    pass
 
 
 class Htp1:
-    """Connect to and manage a Monoprice HTP-1."""
-
-    RECONNECT_DELAY_INITIAL = 5
-    RECONNECT_DELAY_MAX = 300
+    RECONNECT_DELAY_INITIAL = 3
+    RECONNECT_DELAY_MAX = 60
     MSO_WAIT_TIMEOUT = 5
 
     log = getLogger("aiohtp1")
 
-    def __init__(
-        self,
-        host: str,
-        session: aiohttp.ClientSession,
-    ) -> None:
-        """Initialize."""
+    def __init__(self, host: str, session: aiohttp.ClientSession) -> None:
+        self.host = host
+        self.session = session
 
-        self.host: str = host
-        self.session: aiohttp.ClientSession = session
-
-        # socket
         self._websocket: aiohttp.ClientWebSocketResponse | None = None
-        # tasks
-        self._recveive_task: Awaitable[None] | None = None
+        self._receive_task: Awaitable[None] | None = None
         self._try_connect_task: Awaitable[None] | None = None
-        # subscribers
+       
         self._subscriptions: dict[str, list[Callable]] = {}
-        # state
         self._state: dict[str, Any] | None = None
-        self._state_ready: asyncio.Event = asyncio.Event()
+        self._state_ready = asyncio.Event()
         self._tx: dict[str, Any] | None = None
-        self._trying_to_connect: bool = False
+
+        self._trying_to_connect = False
+        self._ha_stopping = False
+
+        self.trigger = TriggerManager(self)
 
         self.reset()
 
     def reset(self):
-        """Reset the Htp1 object's state."""
         self._state = None
         self._tx = None
         self._state_ready.clear()
 
     @property
     def connected(self):
-        """Returns True if the Htp1 device is connected and data is ready."""
         return self._state_ready.is_set()
 
-    async def connect(self):
-        """Connect to the HTP-1 device and open the control websocket."""
-        self.reset()
+    #
+    # CONNECT
+    #
 
+    async def connect(self):
+        self.reset()
         url = f"ws://{self.host}/ws/controller"
-        self.log.debug("connect: url=%s", url)
+        self.log.debug("connect: %s", url)
 
         try:
             self._websocket = await self.session.ws_connect(url)
 
-            # we have a connection, start our receiving handler
-            self._recveive_task = asyncio.create_task(self._recveive())
+        except asyncio.CancelledError:
+            self.log.debug("connect cancelled: HA shutdown")
+            raise
 
-            # request the initial state
-            self.log.debug("connect:   requesting mso")
-            await self._websocket.send_str("getmso")
-
-            # wait until we receive the initial state
-            async with asyncio.timeout(self.MSO_WAIT_TIMEOUT):
-                await self._state_ready.wait()
-        except (
-            TimeoutError,
-            aiodns.error.DNSError,
-            aiohttp.client_exceptions.ClientError,
-            asyncio.CancelledError,
-        ) as err:
-            self.log.warning("connect: failed to connect and retrieve mso")
+        except (TimeoutError, aiodns.error.DNSError, aiohttp.ClientError) as err:
             await self._disconnect()
             raise ConnectionException from err
 
-        self.log.debug("connect:   received mso, ready")
+        # start receive loop
+        self._receive_task = asyncio.create_task(self._receive())
+
+        # request initial state
+        await self._websocket.send_str("getmso")
+        async with asyncio.timeout(self.MSO_WAIT_TIMEOUT):
+            await self._state_ready.wait()
+
         await self._notify("#connection")
 
+    #
+    # DISCONNECT
+    #
+
     async def _disconnect(self):
-        self.log.debug("_disconnect:")
         if self._websocket is not None:
-            # if we have an open connection, close it, this should exit and
-            # clean up the _recveive_task as well
-            await self._websocket.close()
-        if self._recveive_task is not None:
-            # if our receiving handler is running, stop it
-            self._recveive_task.cancel()
+            with suppress(Exception):
+                await self._websocket.close()
+
+        if self._receive_task is not None:
+            self._receive_task.cancel()
             with suppress(asyncio.CancelledError):
-                await self._recveive_task
-            self._recveive_task = None
-        # websocket is no longer valid
+                await self._receive_task
+            self._receive_task = None
+
         self._websocket = None
-        self.log.debug("_disconnect: done")
+
+    #
+    # RECONNECT MANAGER
+    #
 
     async def try_connect(self):
-        """Start the process of persistently trying to connect to the HTP-1 device."""
-        self._try_connect_task = asyncio.create_task(self._try_connect())
+        if self._try_connect_task:
+            return  # already running
+        self._try_connect_task = asyncio.create_task(self._try_connect_loop())
 
-    async def _try_connect(self):
-        self.log.debug("_try_connect:")
+    async def _try_connect_loop(self):
         self._trying_to_connect = True
-        sleep_time = self.RECONNECT_DELAY_INITIAL
+        delay = self.RECONNECT_DELAY_INITIAL
+
         try:
             while self._trying_to_connect:
                 try:
                     await self.connect()
-                except ConnectionException:
-                    self.log.debug("_try_connect:   failed")
-                    await asyncio.sleep(sleep_time)
-                    sleep_time *= 2
-                    sleep_time = min(sleep_time, self.RECONNECT_DELAY_MAX)
-                else:
-                    self.log.debug("_try_connect:   connected")
                     return
+                except ConnectionException:
+                    pass
+
+                # interruptible sleep
+                remaining = delay
+                while remaining > 0 and self._trying_to_connect:
+                    await asyncio.sleep(1)
+                    remaining -= 1
+
+                delay = min(delay * 2, self.RECONNECT_DELAY_MAX)
+
+        except asyncio.CancelledError:
+            raise
         finally:
+            self._trying_to_connect = False
             self._try_connect_task = None
-            self.log.debug("_try_connect:   exited loop")
 
     async def _stop_connect(self):
-        self.log.debug("_stop_connect:")
         self._trying_to_connect = False
-        self._try_connect_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await self._try_connect_task
-        self.log.debug("_stop_connect: done")
+        if self._try_connect_task:
+            self._try_connect_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._try_connect_task
+            self._try_connect_task = None
 
-    async def _recveive(self):
-        self.log.debug("_recveive:")
+    #
+    # RECEIVE LOOP
+    #
+
+    async def _receive(self):
         try:
             while True:
-                msg = await self._websocket.receive()
-                if msg.type == aiohttp.WSMsgType.CLOSE:
-                    await self.try_connect()
-                    await self._notify("#connection")
+                try:
+                    msg = await self._websocket.receive()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as err:
+                    self.log.warning("socket error: %s", err)
                     break
+
+                if msg.type in (
+                    aiohttp.WSMsgType.CLOSE,
+                    aiohttp.WSMsgType.CLOSED,
+                    aiohttp.WSMsgType.ERROR,
+                ):
+                    break
+
                 if msg.type != aiohttp.WSMsgType.TEXT:
-                    # not interested
                     continue
-                msg = msg.data
-                self.log.debug("_recveive:   msg=%s", msg[:100])
-                cmd, payload = msg.split(" ", 1)
+
+                data = msg.data
+                if " " not in data:
+                    continue
+
+                cmd, payload = data.split(" ", 1)
                 handler = getattr(self, f"_cmd_{cmd}", None)
-                if handler:
-                    # parse the (json) payload
-                    payload = loads(payload)
-                    try:
-                        await handler(payload)
-                    except Exception:
-                        # don't exit if a handler has a problem, just log it
-                        self.log.exception("_recveive: handler=%s, threw an exception")
+                if not handler:
+                    continue
+
+                try:
+                    await handler(loads(payload))
+                except Exception:
+                    self.log.exception("handler failed")
+
         finally:
-            # self._recveive_task = None
-            self.log.debug("_recveive:   exited loop")
+            self._state_ready.clear()
+
+            # schedule reconnect unless HA shutting down
+            if not self._ha_stopping:
+                asyncio.create_task(self.try_connect())
+
+            await self._notify("#connection")
+
+    #
+    # STOP
+    #
 
     async def stop(self):
-        """Disconnect from the HTP-1 device and shut down any running background tasks."""
-        self.log.debug("stop:")
-        self._stop_connect()
-        self._disconnect()
+        self._ha_stopping = True
+        await self._stop_connect()
+        await self._disconnect()
         self.reset()
 
-    ## Handlers
+    #
+    # COMMAND HANDLERS
+    #
 
     async def _cmd_mso(self, payload):
-        self.log.debug("_cmd_mso: payload=***")
         self._state = payload
         self._state_ready.set()
+
 
     async def _cmd_msoupdate(self, payload):
         if not isinstance(payload, list):
             payload = [payload]
-        self.log.debug("_cmd_msoupdate: len(payload)=%d", len(payload))
+
         for piece in payload:
             op = piece["op"]
             path = piece["path"][1:].split("/")
-            d = self._state
-            last = path.pop()
-            if op in ("add", "replace"):
-                # for now we're assuming adds are a mistake as we don't expect
-                # new nodes to show up, same for deletes/removes.
-                for node in path:
-                    if isinstance(d, list):
-                        node = int(node)
-                    d = d[node]
-            else:
-                raise NotImplementedError
+            target = self._state
+            final = path.pop()
+
+            if op not in ("add", "replace"):
+                continue
+
+            for node in path:
+                if isinstance(target, list):
+                    node = int(node)
+                target = target[node]
 
             value = piece["value"]
-            self.log.debug(
-                "_cmd_msoupdate:   op=%s, path=%s, value=%s", op, path, value
-            )
-
-            # make the change
-            d[last] = value
+            target[final] = value
 
             await self._notify(piece["path"], value)
 
-    ## Subscriptions
+
+
+    #
+    # SUBSCRIPTIONS
+    #
 
     def subscribe(self, subject, callback):
-        """Subscribe to notifications.
-
-        - /config/path: be notified when changes occur to the specified path
-        - #connection: be notified of changes to the specified topic
-        """
-        self.log.debug("subscribe: subject=%s, callback=%s", subject, subject)
-        if subject not in self._subscriptions:
-            self._subscriptions[subject] = []
-
-        self._subscriptions[subject].append(callback)
+        self._subscriptions.setdefault(subject, []).append(callback)
 
     async def _notify(self, subject, value=None):
-        self.log.debug("notify: subject=%s, value=%s", subject, value)
-        subscribers = self._subscriptions.get(subject) or []
-        self.log.debug("notify:   subscribers=%s", subscribers)
-        for subscriber in subscribers:
-            await subscriber(value)
+        for cb in self._subscriptions.get(subject, []):
+            await cb(value)
 
-    ## Async ContextManager
+    #
+    # TRANSACTION SYSTEM
+    #
 
     async def __aenter__(self):
-        """Start a transaction of grouped changes to the HTP-1's state."""
         if self._tx is not None:
-            raise AioHtp1Exception("transaction already in progress")
+            raise AioHtp1Exception("tx already active")
         self._tx = {}
         return self
 
-    async def __aexit__(self, exc_type=None, exc_val=None, exc_tb=None):
-        """End a transaction, any uncommitted changes will be abandoned."""
+    async def __aexit__(self, exc_type, exc, tb):
         self._tx = None
 
+
     async def commit(self):
-        """Commit any pending changes to the HTP-1 device."""
-        self.log.debug("commit: _tx=%s", self._tx)
         if not self._tx:
             return False
 
-        ops = [
-            {
-                "op": "replace",
-                "path": k,
-                "value": v,
-            }
-            for k, v in self._tx.items()
-        ]
+        ops = [{"op": "replace", "path": k, "value": v} for k, v in self._tx.items()]
         payload = dumps(ops, separators=(",", ":"))
         await self._websocket.send_str(f"changemso {payload}")
 
         self._tx = {}
         return True
 
+
+    async def send_avcui(self, command: str):
+        if not self._websocket:
+            raise AioHtp1Exception("Not connected")
+
+        await self._websocket.send_str(f'avcui "{command}"')
+
+
+
+
+
+    #
+    # ALL YOUR PROPERTY ACCESSORS (unchanged)
+    #
+
+
     ## Operations
+
 
     @property
     def serial_number(self):
@@ -288,13 +309,19 @@ class Htp1:
         return self._state["cal"]["vpl"]
 
     @property
+    def loudness_raw(self):
+        if not self._state:
+            return "off"
+        return self._state.get("loudness", "off")
+
+    @property
     def muted(self):
-        """Retrieve the HTP-1 device's muted value."""
         try:
             return self._tx["/muted"]
-        except (TypeError, KeyError):
+        except Exception:
             pass
-        return self._state["muted"]
+        return self._state.get("muted") if self._state else False
+
 
     @muted.setter
     def muted(self, value):
@@ -305,12 +332,12 @@ class Htp1:
 
     @property
     def volume(self):
-        """Retrieve the HTP-1 device's volume."""
         try:
             return self._tx["/volume"]
-        except (TypeError, KeyError):
+        except Exception:
             pass
-        return self._state["volume"]
+        return self._state.get("volume") if self._state else None
+
 
     @volume.setter
     def volume(self, value):
@@ -321,15 +348,12 @@ class Htp1:
 
     @property
     def power(self):
-        """Retrieve the HTP-1 device's power state."""
         try:
             return self._tx["/powerIsOn"]
-        except (TypeError, KeyError):
+        except Exception:
             pass
-        try:
+        if self._state and "powerIsOn" in self._state:
             return self._state["powerIsOn"]
-        except (TypeError, KeyError):
-            pass
         return None
 
     @power.setter
@@ -339,14 +363,25 @@ class Htp1:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/powerIsOn"] = value
 
+
     @property
     def input(self):
-        """Retrieve the HTP-1 device's input."""
+        if not self._state:
+            return None
+
         try:
-            _id = self._tx["/input"]
-        except (TypeError, KeyError):
-            _id = self._state["input"]
-        return self._state["inputs"][_id]["label"]
+            _id = self._tx.get("/input") if self._tx else None
+        except Exception:
+            _id = None
+
+        if _id is None:
+            _id = self._state.get("input")
+
+        try:
+            return self._state["inputs"][_id]["label"]
+        except Exception:
+            return None
+
 
     @input.setter
     def input(self, value):
@@ -359,23 +394,29 @@ class Htp1:
                 return
         raise AioHtp1Exception("input '{value}' not found")
 
+
     @property
     def inputs(self):
-        """List the HTP-1 device's visible inputs."""
         if not self._state:
             return []
-        return [
-            i["label"] for i in self._state["inputs"].values() if i["visible"]
-        ]
+        try:
+            return [i["label"] for i in self._state["inputs"].values() if i.get("visible")]
+        except Exception:
+            return []
 
     @property
     def upmix(self):
-        """Retrieve the HTP-1 device's upmix."""
+        if not self._state:
+            return None
         try:
-            return self._tx["/upmix/select"]
-        except (TypeError, KeyError):
+            return self._tx.get("/upmix/select")
+        except Exception:
             pass
-        return self._state["upmix"]["select"]
+        try:
+            return self._state["upmix"]["select"]
+        except Exception:
+            return None
+
 
     @upmix.setter
     def upmix(self, value):
@@ -386,9 +427,481 @@ class Htp1:
 
     @property
     def upmixes(self):
-        """List the HTP-1 device's visible upmixes."""
         if not self._state:
             return []
-        return [
-            k for k, i in self._state["upmix"].items() if k != "select" and i["homevis"]
-        ]
+        try:
+            return [
+                k for k, v in self._state["upmix"].items()
+                if k != "select" and v.get("homevis")
+            ]
+        except Exception:
+            return []
+
+    @property
+    def bass_level(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["eq"]["bass"]["level"]
+        except Exception:
+            return None
+
+    @bass_level.setter
+    def bass_level(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/eq/bass/level"] = value
+
+    @property
+    def bass_frequency(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["eq"]["bass"]["freq"]
+        except Exception:
+            return None
+
+    @bass_frequency.setter
+    def bass_frequency(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/eq/bass/freq"] = value
+
+    @property
+    def treble_level(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["eq"]["treble"]["level"]
+        except Exception:
+            return None
+
+    @treble_level.setter
+    def treble_level(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/eq/treble/level"] = value
+
+    @property
+    def treble_frequency(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["eq"]["treble"]["freq"]
+        except Exception:
+            return None
+
+    @treble_frequency.setter
+    def treble_frequency(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/eq/treble/freq"] = value
+
+    @property
+    def tone_control(self):
+        if not self._state:
+            return False
+        try:
+            return self._state["eq"]["tc"]
+        except Exception:
+            return False
+
+    @tone_control.setter
+    def tone_control(self, value: bool):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/eq/tc"] = value
+        
+    @property
+    def loudness_cal(self):
+        if not self._state:
+            return None
+        return self._state.get("loudnessCal")
+
+    @loudness_cal.setter
+    def loudness_cal(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/loudnessCal"] = value
+
+    @property
+    def loudness_status(self):
+        if not self._state:
+            return False
+        return self._state.get("loudness") == "on"
+
+
+    @loudness_status.setter
+    def loudness_status(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+
+        # Muunnetaan boolean -> on/off ennen websocketiin lahettamista
+        self._tx["/loudness"] = "on" if value else "off"
+
+    @property
+    def video_resolution(self):
+        try:
+            return self._state["videostat"]["VideoResolution"]
+        except Exception:
+            return None
+
+    @property
+    def video_colorspace(self):
+        try:
+            return self._state["videostat"]["VideoColorSpace"]
+        except Exception:
+            return None
+
+    @property
+    def video_mode(self):
+        try:
+            return self._state["videostat"]["VideoMode"]
+        except Exception:
+            return None
+
+    @property
+    def video_bitdepth(self):
+        try:
+            return self._state["videostat"]["VideoBitDepth"]
+        except Exception:
+            return None
+
+    @property
+    def video_hdrstatus(self):
+        try:
+            return self._state["videostat"]["HDRstatus"]
+        except Exception:
+            return None
+
+    @property
+    def peq_status(self):
+        try:
+            return self._state["peq"]["peqsw"]
+        except Exception:
+            return None
+
+
+    @property
+    def channeltrim_left(self):
+        try:
+            return self._state["channeltrim"]["channels"]["lf"]
+        except Exception:
+            return None
+
+    @channeltrim_left.setter
+    def channeltrim_left(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/lf"] = value
+
+
+    @property
+    def channeltrim_right(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rf"]
+        except Exception:
+            return None
+
+    @channeltrim_right.setter
+    def channeltrim_right(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rf"] = value
+
+
+    @property
+    def channeltrim_center(self):
+        try:
+            return self._state["channeltrim"]["channels"]["c"]
+        except Exception:
+            return None
+
+    @channeltrim_center.setter
+    def channeltrim_center(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/c"] = value
+
+
+    @property
+    def channeltrim_lfe(self):
+        try:
+            return self._state["channeltrim"]["channels"]["lfe"]
+        except Exception:
+            return None
+
+    @channeltrim_lfe.setter
+    def channeltrim_lfe(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/lfe"] = value
+
+
+    @property
+    def channeltrim_rightsurround(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rs"]
+        except Exception:
+            return None
+
+    @channeltrim_rightsurround.setter
+    def channeltrim_rightsurround(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rs"] = value
+
+
+    @property
+    def channeltrim_leftsurround(self):
+        try:
+            return self._state["channeltrim"]["channels"]["ls"]
+        except Exception:
+            return None
+
+    @channeltrim_leftsurround.setter
+    def channeltrim_leftsurround(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/ls"] = value
+
+
+    @property
+    def channeltrim_rightback(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rb"]
+        except Exception:
+            return None
+
+    @channeltrim_rightback.setter
+    def channeltrim_rightback(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rb"] = value
+
+
+    @property
+    def channeltrim_leftback(self):
+        try:
+            return self._state["channeltrim"]["channels"]["lb"]
+        except Exception:
+            return None
+
+    @channeltrim_leftback.setter
+    def channeltrim_leftback(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/lb"] = value
+
+
+
+    @property
+    def secondvolume(self):
+        try:
+            return self._state["secondVolume"]
+        except Exception:
+            return None
+
+
+    @secondvolume.setter
+    def secondvolume(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/secondVolume"] = value
+
+
+    @property
+    def sourceprogram(self):
+        try:
+            return self._state["status"]["DECSourceProgram"]
+        except Exception:
+            return None
+
+    @property
+    def surroundmode(self):
+        try:
+            return self._state["status"]["SurroundMode"]
+        except Exception:
+            return None
+
+    @property
+    def decsamplerate(self):
+        try:
+            return self._state["status"]["DECSampleRate"]
+        except Exception:
+            return None
+
+    @property
+    def decprogramformat(self):
+        try:
+            return self._state["status"]["DECProgramFormat"]
+        except Exception:
+            return None
+
+
+    @property
+    def channeltrim_ltf(self):
+        try:
+            return self._state["channeltrim"]["channels"]["ltf"]
+        except Exception:
+            return None
+
+    @channeltrim_ltf.setter
+    def channeltrim_ltf(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/ltf"] = value
+
+
+    @property
+    def channeltrim_rtf(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rtf"]
+        except Exception:
+            return None
+
+    @channeltrim_rtf.setter
+    def channeltrim_rtf(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rtf"] = value
+
+
+    @property
+    def channeltrim_ltm(self):
+        try:
+            return self._state["channeltrim"]["channels"]["ltm"]
+        except Exception:
+            return None
+
+    @channeltrim_ltm.setter
+    def channeltrim_ltm(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/ltm"] = value
+
+
+    @property
+    def channeltrim_rtm(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rtm"]
+        except Exception:
+            return None
+
+    @channeltrim_rtm.setter
+    def channeltrim_rtm(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rtm"] = value
+
+
+    @property
+    def channeltrim_ltr(self):
+        try:
+            return self._state["channeltrim"]["channels"]["ltr"]
+        except Exception:
+            return None
+
+    @channeltrim_ltr.setter
+    def channeltrim_ltr(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/ltr"] = value
+
+
+    @property
+    def channeltrim_rtr(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rtr"]
+        except Exception:
+            return None
+
+    @channeltrim_rtr.setter
+    def channeltrim_rtr(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rtr"] = value
+
+
+    @property
+    def channeltrim_lw(self):
+        try:
+            return self._state["channeltrim"]["channels"]["lw"]
+        except Exception:
+            return None
+
+    @channeltrim_lw.setter
+    def channeltrim_lw(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/lw"] = value
+
+
+    @property
+    def channeltrim_rw(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rw"]
+        except Exception:
+            return None
+
+    @channeltrim_rw.setter
+    def channeltrim_rw(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rw"] = value
+
+
+    @property
+    def channeltrim_lfh(self):
+        try:
+            return self._state["channeltrim"]["channels"]["lfh"]
+        except Exception:
+            return None
+
+    @channeltrim_lfh.setter
+    def channeltrim_lfh(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/lfh"] = value
+
+
+    @property
+    def channeltrim_rfh(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rfh"]
+        except Exception:
+            return None
+
+    @channeltrim_rfh.setter
+    def channeltrim_rfh(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rfh"] = value
+
+
+    @property
+    def channeltrim_lhb(self):
+        try:
+            return self._state["channeltrim"]["channels"]["lhb"]
+        except Exception:
+            return None
+
+    @channeltrim_lhb.setter
+    def channeltrim_lhb(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/lhb"] = value
+
+
+    @property
+    def channeltrim_rhb(self):
+        try:
+            return self._state["channeltrim"]["channels"]["rhb"]
+        except Exception:
+            return None
+
+    @channeltrim_rhb.setter
+    def channeltrim_rhb(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/channeltrim/channels/rhb"] = value
