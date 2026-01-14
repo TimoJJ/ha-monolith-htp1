@@ -5,10 +5,11 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .avcui_number import build_avcui_number_entities
 from .const import DOMAIN
+from homeassistant.components.number import NumberMode
 
 
 # -------------------------------------------------------------
-#  HTP-1 Number-maarittelyt
+#  HTP-1 Numbers
 # -------------------------------------------------------------
 NUMBER_DEFINITIONS = [
     {
@@ -72,6 +73,30 @@ NUMBER_DEFINITIONS = [
         "get_fn": lambda h: h.treble_frequency,
         "set_fn": lambda h, v: setattr(h, "treble_frequency", v),
     },
+    {
+        "key": "lipsync_delay",
+        "name": "Lipsync Delay",
+        "path": "/cal/lipsync",
+        "min": 0,
+        "max": 320,
+        "step": 1,
+        "get_fn": lambda h: h.lipsync_delay,
+        "set_fn": lambda h, v: setattr(h, "lipsync_delay", v),
+    },
+
+    {
+        "key": "cal_current_dirac_slot",
+        "name": "Calibration Slot",
+        "path": "/cal/currentdiracslot",
+        "icon": "mdi:playlist-check",
+        "mode": "box",
+        "min": 0,
+        "max": 2,
+        "step": 1,
+        "get_fn": lambda htp1: htp1.cal_current_dirac_slot,
+        "set_fn": lambda h, v: setattr(h, "cal_current_dirac_slot", int(v)),
+    },
+
     {
         "key": "channeltrim_right",
         "name": "Trim Right",
@@ -367,7 +392,8 @@ class Htp1Number(NumberEntity):
         self._attr_native_min_value = min
         self._attr_native_max_value = max
         self._attr_native_step = step
-
+        if key == "cal_current_dirac_slot":
+            self._attr_mode = NumberMode.BOX
         self._attr_entity_registry_enabled_default = entity_registry_enabled_default
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},

@@ -309,34 +309,8 @@ class Htp1:
         return self._state["cal"]["vpl"]
 
     @property
-    def cal_current_slot_name(self):
-        if not self._state:
-            return None
-
-        cal = self._state.get("cal", {})
-        if not isinstance(cal, dict):
-            return None
-
-        idx = cal.get("currentdiracslot", None)
-        try:
-            idx = int(idx)
-        except (TypeError, ValueError):
-            return None
-
-        slots = cal.get("slots", [])
-        if not isinstance(slots, list) or idx < 0 or idx >= len(slots):
-            return None
-
-        slot = slots[idx]
-        if not isinstance(slot, dict):
-            return None
-
-        name = slot.get("name")
-        return name or None
-
-
-    @property
     def cal_current_dirac_slot(self):
+        """Active Dirac slot index (0-2)."""
         if not self._state:
             return None
         try:
