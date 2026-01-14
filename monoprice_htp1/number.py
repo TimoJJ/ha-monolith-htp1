@@ -83,15 +83,14 @@ NUMBER_DEFINITIONS = [
         "get_fn": lambda h: h.lipsync_delay,
         "set_fn": lambda h, v: setattr(h, "lipsync_delay", v),
     },
-
     {
         "key": "cal_current_dirac_slot",
         "name": "Calibration Slot",
         "path": "/cal/currentdiracslot",
         "icon": "mdi:playlist-check",
         "mode": "box",
-        "min": 0,
-        "max": 2,
+        "min": 1,
+        "max": 3,
         "step": 1,
         "get_fn": lambda htp1: htp1.cal_current_dirac_slot,
         "set_fn": lambda h, v: setattr(h, "cal_current_dirac_slot", int(v)),
@@ -386,6 +385,7 @@ class Htp1Number(NumberEntity):
         self._path = path
         self._get_fn = get_fn
         self._set_fn = set_fn
+        self._key = key
 
         self._attr_unique_id = f"{entry_id}_{key}"
         self._attr_name = name
@@ -409,12 +409,24 @@ class Htp1Number(NumberEntity):
     @property
     def native_value(self):
         try:
-            return self._get_fn(self._htp1)
+            v = self._get_fn(self._htp1)
+            if v is None:
+                return None
+
+            # Display Dirac slot as 1..3 in UI, while device uses 0..2
+            if self._key == "cal_current_dirac_slot":
+                return int(v) + 1
+
+            return v
         except Exception:
             return None
 
     async def async_set_native_value(self, value):
         async with self._htp1:
+            # UI uses 1..3, device expects 0..2
+            if self._key == "cal_current_dirac_slot":
+                value = int(value) - 1
+
             self._set_fn(self._htp1, value)
             await self._htp1.commit()
 
