@@ -7,6 +7,6 @@
   "integration_type": "device",
   "iot_class": "local_push",
   "loggers": ["aiohtp1", "monoprice_htp1"],
-  "version": "1.0.4",
+  "version": "1.0.5",
   "requirements": []
 }
