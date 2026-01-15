@@ -16,8 +16,8 @@ AVCUI_NUMBERS = [
         "key": "secondary_volume",
         "name": "Secondary Volume",
         "command": "sec vol",
-        "min": -70,
-        "max": -1,
+        "min": lambda h: h.cal_vpl,
+        "max": lambda h: h.cal_vph,
         "step": 1,
         "state_var": "sec_vol",
     },
@@ -54,8 +54,8 @@ class Htp1AvcuiNumber(NumberEntity):
         key: str,
         name: str,
         command_prefix: str,
-        minimum: int,
-        maximum: int,
+        minimum,
+        maximum,
         step: int,
     ):
         self._hass = hass
@@ -75,8 +75,8 @@ class Htp1AvcuiNumber(NumberEntity):
 
         self._attr_unique_id = f"{entry_id}_avcui_{key}"
         self._attr_name = name
-        self._attr_native_min_value = minimum
-        self._attr_native_max_value = maximum
+        self._min = minimum
+        self._max = maximum
         self._attr_native_step = step
 
         self._attr_device_info = DeviceInfo(
@@ -89,6 +89,27 @@ class Htp1AvcuiNumber(NumberEntity):
     @property
     def available(self):
         return self._htp1.connected
+
+    def _resolve_limit(self, v):
+        try:
+            return v(self._htp1) if callable(v) else v
+        except Exception:
+            return None
+
+    @property
+    def native_min_value(self):
+        value = self._resolve_limit(self._min)
+        if value is None:
+            return -70
+        return value
+
+    @property
+    def native_max_value(self):
+        value = self._resolve_limit(self._max)
+        if value is None:
+            return -1
+        return value
+
 
     @property
     def native_value(self):

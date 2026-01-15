@@ -16,23 +16,23 @@ NUMBER_DEFINITIONS = [
         "key": "volume",
         "name": "Volume",
         "path": "/volume",
-        "min": -70,
-        "max": -1,
+        "min": lambda h: h.cal_vpl,
+        "max": lambda h: h.cal_vph,
         "step": 1,
         "get_fn": lambda h: h.volume,
         "set_fn": lambda h, v: setattr(h, "volume", v),
     },
-    {
-        "key": "secondvolume",
-        "name": "Secondary Volume mso",
-        "path": "/secondVolume",
-        "min": -70,
-        "max": -1,
-        "step": 1,
-        "get_fn": lambda h: h.secondvolume,
-        "set_fn": lambda h, v: setattr(h, "secondvolume", v),
-        "entity_registry_enabled_default": False,
-    },
+#    {
+#        "key": "secondvolume",
+#        "name": "Secondary Volume mso",
+#        "path": "/secondVolume",
+#        "min": lambda h: h.cal_vpl,
+#        "max": lambda h: h.cal_vph,
+#        "step": 1,
+#        "get_fn": lambda h: h.secondvolume,
+#        "set_fn": lambda h, v: setattr(h, "secondvolume", v),
+#        "entity_registry_enabled_default": False,
+#    },
     {
         "key": "bass_level",
         "name": "Bass Level",
@@ -389,8 +389,8 @@ class Htp1Number(NumberEntity):
 
         self._attr_unique_id = f"{entry_id}_{key}"
         self._attr_name = name
-        self._attr_native_min_value = min
-        self._attr_native_max_value = max
+        self._min = min
+        self._max = max        
         self._attr_native_step = step
         if key == "cal_current_dirac_slot":
             self._attr_mode = NumberMode.BOX
@@ -405,6 +405,47 @@ class Htp1Number(NumberEntity):
     @property
     def available(self):
         return self._htp1.connected
+
+
+    def _resolve_limit(self, v):
+        try:
+            return v(self._htp1) if callable(v) else v
+        except Exception:
+            return None
+
+    @property
+    def native_min_value(self):
+        value = self._resolve_limit(self._min)
+        if value is None:
+            # fallback jos cal-data ei vielä ole saatavilla
+            return -70 if self._key in ("volume", "secondvolume") else self._min
+        return value
+
+    @property
+    def native_max_value(self):
+        value = self._resolve_limit(self._max)
+        if value is None:
+            # fallback jos cal-data ei vielä ole saatavilla
+            return -1 if self._key in ("volume", "secondvolume") else self._max
+        return value
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     @property
     def native_value(self):
