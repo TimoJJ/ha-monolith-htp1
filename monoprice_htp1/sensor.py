@@ -99,6 +99,14 @@ SENSOR_DEFINITIONS = [
         "icon": "mdi:sine-wave",                   
     },
     {
+        "key": "display_brightness",
+        "name": "Display Brightness",
+        "path": "/hw/fpBright",
+        "value_fn": lambda htp1: htp1.display_brightness,
+        "state_class": "measurement",              
+        "icon": "mdi:brightness-4",                   
+    },
+    {
         "key": "tone_control",
         "name": "Tone Control",
         "path": "/eq/tc",

@@ -600,6 +600,20 @@ class Htp1:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/cal/lipsync"] = value
 
+    @property
+    def display_brightness(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["hw"]["fpBright"]
+        except Exception:
+            return None
+
+    @display_brightness.setter
+    def display_brightness(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/hw/fpBright"] = value
 
     @property
     def video_resolution(self):

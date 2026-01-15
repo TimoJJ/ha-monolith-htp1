@@ -84,6 +84,16 @@ NUMBER_DEFINITIONS = [
         "set_fn": lambda h, v: setattr(h, "lipsync_delay", v),
     },
     {
+        "key": "display_brightness",
+        "name": "Display Brightness",
+        "path": "/hw/fpBright",
+        "min": 0,
+        "max": 7,
+        "step": 1,
+        "get_fn": lambda h: h.display_brightness,
+        "set_fn": lambda h, v: setattr(h, "display_brightness", v),
+    },
+    {
         "key": "cal_current_dirac_slot",
         "name": "Calibration Slot",
         "path": "/cal/currentdiracslot",
@@ -100,8 +110,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_right",
         "name": "Trim Right",
         "path": "/channeltrim/channels/rf",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_right,
         "set_fn": lambda h, v: setattr(h, "channeltrim_right", v),
@@ -110,8 +120,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_left",
         "name": "Trim Left",
         "path": "/channeltrim/channels/lf",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_left,
         "set_fn": lambda h, v: setattr(h, "channeltrim_left", v),
@@ -120,8 +130,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_center",
         "name": "Trim Center",
         "path": "/channeltrim/channels/c",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_center,
         "set_fn": lambda h, v: setattr(h, "channeltrim_center", v),
@@ -130,8 +140,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_lfe",
         "name": "Trim LFE",
         "path": "/channeltrim/channels/lfe",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_lfe,
         "set_fn": lambda h, v: setattr(h, "channeltrim_lfe", v),
@@ -140,8 +150,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rightsurround",
         "name": "Trim Right Surround",
         "path": "/channeltrim/channels/rs",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rightsurround,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rightsurround", v),
@@ -150,8 +160,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_leftsurround",
         "name": "Trim Left Surround",
         "path": "/channeltrim/channels/ls",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_leftsurround,
         "set_fn": lambda h, v: setattr(h, "channeltrim_leftsurround", v),
@@ -160,8 +170,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rightback",
         "name": "Trim Right Back",
         "path": "/channeltrim/channels/rb",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rightback,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rightback", v),
@@ -170,8 +180,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_leftback",
         "name": "Trim Left Back",
         "path": "/channeltrim/channels/lb",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_leftback,
         "set_fn": lambda h, v: setattr(h, "channeltrim_leftback", v),
@@ -181,8 +191,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_ltf",
         "name": "Trim Left Top Front",
         "path": "/channeltrim/channels/ltf",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_ltf,
         "set_fn": lambda h, v: setattr(h, "channeltrim_ltf", v),
@@ -192,8 +202,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rtf",
         "name": "Trim Right Top Front",
         "path": "/channeltrim/channels/rtf",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rtf,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rtf", v),
@@ -203,8 +213,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_ltm",
         "name": "Trim Left Top Middle",
         "path": "/channeltrim/channels/ltm",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_ltm,
         "set_fn": lambda h, v: setattr(h, "channeltrim_ltm", v),
@@ -214,8 +224,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rtm",
         "name": "Trim Right Top Middle",
         "path": "/channeltrim/channels/rtm",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rtm,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rtm", v),
@@ -225,8 +235,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_ltr",
         "name": "Trim Left Top Rear",
         "path": "/channeltrim/channels/ltr",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_ltr,
         "set_fn": lambda h, v: setattr(h, "channeltrim_ltr", v),
@@ -236,8 +246,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rtr",
         "name": "Trim Right Top Rear",
         "path": "/channeltrim/channels/rtr",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rtr,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rtr", v),
@@ -247,8 +257,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_lw",
         "name": "Trim Left Wide",
         "path": "/channeltrim/channels/lw",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_lw,
         "set_fn": lambda h, v: setattr(h, "channeltrim_lw", v),
@@ -258,8 +268,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rw",
         "name": "Trim Right Wide",
         "path": "/channeltrim/channels/rw",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rw,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rw", v),
@@ -269,8 +279,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_lfh",
         "name": "Trim Left Front Height",
         "path": "/channeltrim/channels/lfh",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_lfh,
         "set_fn": lambda h, v: setattr(h, "channeltrim_lfh", v),
@@ -280,8 +290,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rfh",
         "name": "Trim Right Front Height",
         "path": "/channeltrim/channels/rfh",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rfh,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rfh", v),
@@ -291,8 +301,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_lhb",
         "name": "Trim Left Height Back",
         "path": "/channeltrim/channels/lhb",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_lhb,
         "set_fn": lambda h, v: setattr(h, "channeltrim_lhb", v),
@@ -302,8 +312,8 @@ NUMBER_DEFINITIONS = [
         "key": "channeltrim_rhb",
         "name": "Trim Right Height Back",
         "path": "/channeltrim/channels/rhb",
-        "min": -6,
-        "max": 6,
+        "min": -12,
+        "max": 12,
         "step": 0.25,
         "get_fn": lambda h: h.channeltrim_rhb,
         "set_fn": lambda h, v: setattr(h, "channeltrim_rhb", v),
@@ -417,7 +427,6 @@ class Htp1Number(NumberEntity):
     def native_min_value(self):
         value = self._resolve_limit(self._min)
         if value is None:
-            # fallback jos cal-data ei vielä ole saatavilla
             return -70 if self._key in ("volume", "secondvolume") else self._min
         return value
 
@@ -425,27 +434,8 @@ class Htp1Number(NumberEntity):
     def native_max_value(self):
         value = self._resolve_limit(self._max)
         if value is None:
-            # fallback jos cal-data ei vielä ole saatavilla
             return -1 if self._key in ("volume", "secondvolume") else self._max
         return value
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     @property
     def native_value(self):
