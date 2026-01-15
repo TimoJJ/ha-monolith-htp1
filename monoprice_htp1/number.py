@@ -78,7 +78,7 @@ NUMBER_DEFINITIONS = [
         "name": "Lipsync Delay",
         "path": "/cal/lipsync",
         "min": 0,
-        "max": 320,
+        "max": 340,
         "step": 1,
         "get_fn": lambda h: h.lipsync_delay,
         "set_fn": lambda h, v: setattr(h, "lipsync_delay", v),
