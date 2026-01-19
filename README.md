@@ -25,3 +25,4 @@ Delete old version's `monoprice_htp1` directory from custom_components. Copy `mo
 ![Screenshot 1](assets/pic4.png) ![Screenshot 1](assets/pic5.png)
 
 ![Screenshot 1](assets/pic6.png)
+
