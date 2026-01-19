@@ -1,5 +1,7 @@
 """Support for the Monoprice HTP-1."""
 
+from __future__ import annotations
+
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -7,8 +9,8 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .aiohtp1 import Htp1
 from .const import DOMAIN, LOGGER
@@ -20,7 +22,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Monoprice HTP-1 config entry."""
-    htp1 = hass.data[DOMAIN][entry.entry_id]
+    htp1: Htp1 = hass.data[DOMAIN][entry.entry_id]
     async_add_entities((Htp1MediaPlayer(htp1=htp1, entry_id=entry.entry_id),), True)
 
 
@@ -31,9 +33,9 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         """Initialize."""
         self.htp1 = htp1
 
-        self._power_cache = None
-        self._muted_cache = None
-        self._volume_cache = None
+        self._power_cache: bool | None = None
+        self._muted_cache: bool | None = None
+        self._volume_cache: int | float | None = None
 
         self._attr_unique_id = f"{entry_id}_media_player"
         self._attr_name = "HTP-1"
@@ -44,53 +46,17 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             name="HTP-1",
         )
 
+        # Will be updated on (re)connect.
+        self._attr_volume_step: float | None = None
+
     @property
     def should_poll(self) -> bool:
-        """Return the polling state."""
         return False
 
-    async def async_added_to_hass(self) -> None:
-        """Run when this Entity has been added to HA."""
-        await super().async_added_to_hass()
-
-        htp1 = self.htp1
-
-        async def _on_power(value):
-            self._power_cache = value
-            self.async_schedule_update_ha_state()
-
-        async def _on_muted(value):
-            self._muted_cache = value
-            self.async_schedule_update_ha_state()
-
-        async def _on_volume(value):
-            self._volume_cache = value
-            self.async_schedule_update_ha_state()
-
-        async def _on_connection(_value=None):
-            # refresh cached calibration dependent values
-            try:
-                self._attr_volume_step = 1 / (htp1.cal_vph - htp1.cal_vpl)
-            except Exception:
-                self._attr_volume_step = None
-            # seed caches from current state
-            self._power_cache = htp1.power
-            self._muted_cache = htp1.muted
-            self._volume_cache = htp1.volume
-            self.async_schedule_update_ha_state()
-
-        htp1.subscribe("/muted", _on_muted)
-        htp1.subscribe("/powerIsOn", _on_power)
-        htp1.subscribe("/volume", _on_volume)
-        htp1.subscribe("/input", _on_connection)
-        htp1.subscribe("#connection", _on_connection)
-
-        # seed caches immediately
-        self._power_cache = htp1.power
-        self._muted_cache = htp1.muted
-        self._volume_cache = htp1.volume
-        self.async_schedule_update_ha_state()
-
+    @property
+    def available(self) -> bool:
+        """Return connection status."""
+        return self.htp1.connected
 
     async def async_added_to_hass(self) -> None:
         """Run when this Entity has been added to HA."""
@@ -106,17 +72,31 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             self._muted_cache = value
             self.async_schedule_update_ha_state()
 
+        async def _on_upmix(_value):
+            self.async_schedule_update_ha_state()
+
         async def _on_volume(value):
             self._volume_cache = value
             self.async_schedule_update_ha_state()
 
         async def _on_connection(_value=None):
-            # refresh cached calibration dependent values
+            # When disconnected, clear caches so we don't keep showing stale values
+            # (e.g. power ON after the device reboots).
+            if not htp1.connected:
+                self._power_cache = None
+                self._muted_cache = None
+                self._volume_cache = None
+                self._attr_volume_step = None
+                self.async_schedule_update_ha_state()
+                return
+
+            # Refresh cached calibration dependent values
             try:
                 self._attr_volume_step = 1 / (htp1.cal_vph - htp1.cal_vpl)
             except Exception:
                 self._attr_volume_step = None
-            # seed caches from current state
+
+            # Seed caches from current state
             self._power_cache = htp1.power
             self._muted_cache = htp1.muted
             self._volume_cache = htp1.volume
@@ -125,18 +105,15 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         htp1.subscribe("/muted", _on_muted)
         htp1.subscribe("/powerIsOn", _on_power)
         htp1.subscribe("/volume", _on_volume)
+        # Some settings changes can imply state changes; treat them as a resync trigger.
         htp1.subscribe("/input", _on_connection)
         htp1.subscribe("#connection", _on_connection)
-
-        # seed caches immediately
-        self._power_cache = htp1.power
-        self._muted_cache = htp1.muted
-        self._volume_cache = htp1.volume
-        self.async_schedule_update_ha_state()
+        htp1.subscribe("/upmix/select", _on_upmix)
+        # Seed once on add.
+        await _on_connection()
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
-        """Flag media player features that are supported."""
         return (
             MediaPlayerEntityFeature.TURN_OFF
             | MediaPlayerEntityFeature.TURN_ON
@@ -147,10 +124,9 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             | MediaPlayerEntityFeature.VOLUME_STEP
         )
 
-    ## Power
+    # Power
 
     async def async_turn_on(self) -> None:
-        """Turn the media player on."""
         LOGGER.debug("async_turn_on:")
         async with self.htp1 as tx:
             tx.power = True
@@ -159,7 +135,6 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         self.async_schedule_update_ha_state()
 
     async def async_turn_off(self) -> None:
-        """Turn the media player off."""
         LOGGER.debug("async_turn_off:")
         async with self.htp1 as tx:
             tx.power = False
@@ -169,7 +144,7 @@ class Htp1MediaPlayer(MediaPlayerEntity):
 
     @property
     def state(self) -> MediaPlayerState | None:
-        """Return the state of the player."""
+        # If we're offline and caches were cleared, show unknown.
         pwr = self._power_cache if self._power_cache is not None else self.htp1.power
         if pwr is True or pwr == 1:
             return MediaPlayerState.ON
@@ -177,25 +152,27 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             return MediaPlayerState.OFF
         return None
 
-    ## Volume
+    # Volume
 
     @property
     def volume_step(self) -> float | None:
-        """Return the volume step for volume_up/down (0..1)."""
-        try:
-            # 1 dB step mapped to 0..1 volume scale
-            return 1 / (self.htp1.cal_vph - self.htp1.cal_vpl)
-        except Exception:
-            return None
-
+        return self._attr_volume_step
 
     @property
-    def volume_level(self):
+    def volume_level(self) -> float | None:
         """Return the volume level of the media player (0..1)."""
-        volume = self._volume_cache if self._volume_cache is not None else self.htp1.volume
-        return (volume - self.htp1.cal_vpl) / (self.htp1.cal_vph - self.htp1.cal_vpl)
-
-
+        try:
+            volume = self._volume_cache if self._volume_cache is not None else self.htp1.volume
+            if volume is None:
+                return None
+            cal_vpl = self.htp1.cal_vpl
+            cal_vph = self.htp1.cal_vph
+            span = cal_vph - cal_vpl
+            if span <= 0:
+                return None
+            return (float(volume) - cal_vpl) / span
+        except Exception:
+            return None
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set the volume level of the media player (0..1). Sends integer dB to HTP-1."""
@@ -215,55 +192,57 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             self.htp1.volume = target_db
             await self.htp1.commit()
 
-
     @property
-    def is_volume_muted(self):
-        """Return boolean if volume is currently muted."""
-        return self._muted_cache if self._muted_cache is not None else self.htp1.muted
+    def is_volume_muted(self) -> bool | None:
+        val = self._muted_cache if self._muted_cache is not None else self.htp1.muted
+        if val in (True, False):
+            return bool(val)
+        return None
 
     async def async_mute_volume(self, mute: bool) -> None:
-        """Mute the entity."""
         async with self.htp1 as tx:
             tx.muted = mute
             await tx.commit()
 
-    ## Sound Mode
+    # Sound Mode
 
     async def async_select_sound_mode(self, sound_mode: str) -> None:
-        """Select sound mode."""
         async with self.htp1 as tx:
             tx.upmix = sound_mode
             await tx.commit()
+        self.async_schedule_update_ha_state()
 
     @property
-    def sound_mode(self):
-        """Return the current sound mode."""
-        return self.htp1.upmix
+    def sound_mode(self) -> str | None:
+        try:
+            return self.htp1.upmix
+        except Exception:
+            return None
 
     @property
-    def sound_mode_list(self):
-        """Return a list of available sound modes."""
-        return self.htp1.upmixes
+    def sound_mode_list(self) -> list[str]:
+        try:
+            return self.htp1.upmixes
+        except Exception:
+            return []
 
-    ## Source
+    # Source
 
     async def async_select_source(self, source: str) -> None:
-        """Select input source."""
         async with self.htp1 as tx:
             tx.input = source
             await tx.commit()
 
     @property
-    def source_id(self):
-        """ID of the current input source."""
-        return self.htp1.input
+    def source(self) -> str | None:
+        try:
+            return self.htp1.input
+        except Exception:
+            return None
 
     @property
-    def source(self):
-        """Name of the current input source."""
-        return self.htp1.input
-
-    @property
-    def source_list(self):
-        """List of available input sources."""
-        return self.htp1.inputs
+    def source_list(self) -> list[str]:
+        try:
+            return self.htp1.inputs
+        except Exception:
+            return []

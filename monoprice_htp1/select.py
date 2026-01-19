@@ -4,6 +4,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
+from .avcui_select import build_avcui_select_entities
 
 from .const import DOMAIN
 
@@ -16,12 +17,15 @@ async def async_setup_entry(
 
     htp1 = hass.data[DOMAIN][entry.entry_id]
 
-    async_add_entities(
-        [
-            Htp1InputSelect(htp1, entry),
-            Htp1UpmixSelect(htp1, entry),
-        ]
-    )
+    entities = [
+        Htp1InputSelect(htp1, entry),
+        Htp1UpmixSelect(htp1, entry),
+    ]
+
+    entities += build_avcui_select_entities(htp1, entry.entry_id)
+
+    async_add_entities(entities, update_before_add=False)
+
 
 
 class Htp1BaseSelect(SelectEntity):
@@ -74,7 +78,6 @@ class Htp1InputSelect(Htp1BaseSelect):
             await self._htp1.commit()
 
     async def async_added_to_hass(self):
-        # Paivita valikko kun tila muuttuu
         self._htp1.subscribe("/input", self._handle_update)
 
     async def _handle_update(self, value):
@@ -113,7 +116,6 @@ class Htp1UpmixSelect(Htp1BaseSelect):
             await self._htp1.commit()
 
     async def async_added_to_hass(self):
-        # Paivita valikko kun tila muuttuu
         self._htp1.subscribe("/upmix/select", self._handle_update)
 
     async def _handle_update(self, value):

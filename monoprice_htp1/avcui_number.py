@@ -103,6 +103,7 @@ class Htp1AvcuiNumber(NumberEntity):
             return -70
         return value
 
+
     @property
     def native_max_value(self):
         value = self._resolve_limit(self._max)
@@ -113,18 +114,18 @@ class Htp1AvcuiNumber(NumberEntity):
 
     @property
     def native_value(self):
-
-        if self._current_value is None:
-            return self._attr_native_min_value
         return self._current_value
 
-    async def async_added_to_hass(self):
 
+    async def async_added_to_hass(self):
         data = await self._store.async_load()
         if data and self._key in data:
             self._current_value = data[self._key]
+        else:
+            self._current_value = self.native_min_value
 
         self.async_write_ha_state()
+
 
     async def async_set_native_value(self, value):
         value = int(value)

@@ -438,13 +438,24 @@ class Htp1Number(NumberEntity):
         return value
 
     @property
+    def available(self) -> bool:
+        # Lock volume in standby
+        if self._key == "volume":
+            return self._htp1.connected and self._htp1.power is True
+
+        return self._htp1.connected
+
+    @property
     def native_value(self):
         try:
+            # Lock volume display when device is off/sleep
+            if self._key == "volume" and self._htp1.power is False:
+                return self._htp1.power_on_vol
+
             v = self._get_fn(self._htp1)
             if v is None:
                 return None
 
-            # Display Dirac slot as 1..3 in UI, while device uses 0..2
             if self._key == "cal_current_dirac_slot":
                 return int(v) + 1
 
@@ -458,11 +469,20 @@ class Htp1Number(NumberEntity):
             if self._key == "cal_current_dirac_slot":
                 value = int(value) - 1
 
+            # Lock volume when device is off/sleep
+            if self._key == "volume" and self._htp1.power is False:
+                value = self._htp1.power_on_vol
+
             self._set_fn(self._htp1, value)
             await self._htp1.commit()
 
+
     async def async_added_to_hass(self):
         self._htp1.subscribe(self._path, self._handle_update)
+
+        if self._key == "volume":
+            self._htp1.subscribe("/powerIsOn", self._handle_update)
+            self._htp1.subscribe("/powerOnVol", self._handle_update)
 
     async def _handle_update(self, value):
         self.async_write_ha_state()

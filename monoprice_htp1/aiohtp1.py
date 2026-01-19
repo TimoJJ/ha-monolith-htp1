@@ -279,9 +279,10 @@ class Htp1:
         if not self._websocket:
             raise AioHtp1Exception("Not connected")
 
-        await self._websocket.send_str(f'avcui "{command}"')
+        msg = f'avcui "{command}"'
+        self.log.debug("send_avcui: %s", msg)
 
-
+        await self._websocket.send_str(msg)
 
 
 
@@ -307,6 +308,15 @@ class Htp1:
     def cal_vpl(self):
         """Retrieve the HTP-1 device's calibration min volume."""
         return self._state["cal"]["vpl"]
+
+    @property
+    def power_on_vol(self):
+        """Retrieve the HTP-1 power-on volume."""
+        try:
+            return self._tx["/powerOnVol"]
+        except (TypeError, KeyError):
+            pass
+        return self._state["powerOnVol"]
 
     @property
     def cal_current_slot_name(self):
@@ -449,6 +459,21 @@ class Htp1:
             return [i["label"] for i in self._state["inputs"].values() if i.get("visible")]
         except Exception:
             return []
+
+
+    @property
+    def secondvolume(self):
+        try:
+            return self._state["secondVolume"]
+        except Exception:
+            return None
+
+    @secondvolume.setter
+    def secondvolume(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/secondVolume"] = value
+
 
     @property
     def upmix(self):
@@ -615,6 +640,7 @@ class Htp1:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/hw/fpBright"] = value
 
+
     @property
     def video_resolution(self):
         try:
@@ -650,10 +676,53 @@ class Htp1:
         except Exception:
             return None
 
+
     @property
     def peq_status(self):
         try:
             return self._state["peq"]["peqsw"]
+        except Exception:
+            return None
+
+    @property
+    def sourceprogram(self):
+        try:
+            return self._state["status"]["DECSourceProgram"]
+        except Exception:
+            return None
+
+    @property
+    def surroundmode(self):
+        try:
+            return self._state["status"]["SurroundMode"]
+        except Exception:
+            return None
+
+    @property
+    def decsamplerate(self):
+        try:
+            return self._state["status"]["DECSampleRate"]
+        except Exception:
+            return None
+
+    @property
+    def decprogramformat(self):
+        try:
+            return self._state["status"]["DECProgramFormat"]
+        except Exception:
+            return None
+
+    @property
+    def enclisteningformat(self):
+        try:
+            return self._state["status"]["ENCListeningFormat"]
+        except Exception:
+            return None
+
+    @property
+    def currentlayout(self):
+        try:
+            return self._state["cal"]["currentLayout"]
         except Exception:
             return None
 
@@ -769,50 +838,6 @@ class Htp1:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/channeltrim/channels/lb"] = value
 
-
-
-    @property
-    def secondvolume(self):
-        try:
-            return self._state["secondVolume"]
-        except Exception:
-            return None
-
-
-    @secondvolume.setter
-    def secondvolume(self, value):
-        if self._tx is None:
-            raise AioHtp1Exception("no transaction in progress")
-        self._tx["/secondVolume"] = value
-
-
-    @property
-    def sourceprogram(self):
-        try:
-            return self._state["status"]["DECSourceProgram"]
-        except Exception:
-            return None
-
-    @property
-    def surroundmode(self):
-        try:
-            return self._state["status"]["SurroundMode"]
-        except Exception:
-            return None
-
-    @property
-    def decsamplerate(self):
-        try:
-            return self._state["status"]["DECSampleRate"]
-        except Exception:
-            return None
-
-    @property
-    def decprogramformat(self):
-        try:
-            return self._state["status"]["DECProgramFormat"]
-        except Exception:
-            return None
 
 
     @property

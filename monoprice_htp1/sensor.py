@@ -213,6 +213,22 @@ SENSOR_DEFINITIONS = [
         "entity_category": "diagnostic",
     },
     {
+        "key": "currentLayout",
+        "name": "Speaker layout",
+        "path": "/cal/currentLayout",
+        "value_fn": lambda htp1: htp1.currentlayout,
+        "icon": "mdi:speaker",                           
+        "entity_category": "diagnostic",
+    },
+    {
+        "key": "enclisteningformat",
+        "name": "Audio Listening Format",
+        "path": "/status/ENCListeningFormat",
+        "value_fn": lambda htp1: htp1.enclisteningformat,
+        "icon": "mdi:speaker",                           
+        "entity_category": "diagnostic",
+    },
+    {
         "key": "channeltrim_left",
         "name": "Trim Left",
         "path": "/channeltrim/channels/lf",
