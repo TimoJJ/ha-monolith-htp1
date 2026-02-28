@@ -4,13 +4,13 @@ from __future__ import annotations
 import asyncio
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.core import HomeAssistant
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN
 from .aiohtp1 import Htp1
+from .const import DOMAIN
 
 PLATFORMS = ["sensor", "number", "switch", "select", "button", "media_player"]
 
@@ -21,29 +21,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     htp1 = Htp1(entry.data["host"], session)
 
-    # store instance
-    hass.data[DOMAIN][entry.entry_id] = htp1
-
-    # IMPORTANT: establish websocket connection during setup
-    # If the device is not reachable yet, ask Home Assistant to retry.
     try:
-        await htp1.try_connect()
+        # Ensure websocket + initial state are ready during setup.
+        await asyncio.wait_for(htp1.connect(), timeout=10)
+
+        # Store instance only after a successful connection.
+        hass.data[DOMAIN][entry.entry_id] = htp1
+
+        async def _shutdown(event):
+            await htp1.stop()
+
+        entry.async_on_unload(
+            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
+        )
+
+        # Forward platforms; if this fails, we must clean up.
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+        return True
+
     except Exception as err:
-        # cleanup and let HA retry later automatically
+        # Roll back any partial setup cleanly.
+        try:
+            hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        except Exception:
+            pass
+
         await htp1.stop()
-        raise ConfigEntryNotReady(f"HTP-1 websocket connect failed: {err}") from err
-
-    async def _shutdown(event):
-        await htp1.stop()
-
-    entry.async_on_unload(
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
-    )
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    return True
-
+        raise ConfigEntryNotReady(f"HTP-1 not ready: {err}") from err
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

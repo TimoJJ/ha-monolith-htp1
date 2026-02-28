@@ -3,10 +3,9 @@
   "name": "Monoprice HTP-1",
   "codeowners": ["@TimoJJ"],
   "config_flow": true,
-  "documentation": "https://github.com/TimoJJ/ha-monolith-htp1/ ",
+  "documentation": "https://github.com/TimoJJ/ha-monolith-htp1/",
   "integration_type": "device",
   "iot_class": "local_push",
   "loggers": ["aiohtp1", "monoprice_htp1"],
-  "version": "1.0.9",
-  "requirements": []
+  "version": "1.1.0"
 }

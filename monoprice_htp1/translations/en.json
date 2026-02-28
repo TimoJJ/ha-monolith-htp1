@@ -4,16 +4,13 @@
       "already_configured": "Device is already configured"
     },
     "error": {
-      "cannot_connect": "Failed to connect",
-      "invalid_auth": "Invalid authentication",
+      "cannot_connect": "Failed to connect to device",
       "unknown": "Unexpected error"
     },
     "step": {
       "user": {
         "data": {
-          "host": "HTP-1 IP address",
-          "password": "Password",
-          "username": "Username"
+          "host": "HTP-1 IP address"
         }
       },
       "reconfigure": {

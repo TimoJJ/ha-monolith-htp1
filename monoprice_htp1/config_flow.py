@@ -1,5 +1,8 @@
 """Config flow for Monoprice HTP-1 integration."""
 
+from __future__ import annotations
+
+import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -14,19 +17,19 @@ from .const import DOMAIN, LOGGER
 from .helpers import async_get_clientsession
 
 
-async def validate_input(hass: HomeAssistant, data: dict) -> str:
-    """Validate the user input allows us to connect.
-
-    Data has the keys from DATA_SCHEMA with values provided by the user.
-    """
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> str:
+    """Validate the user input allows us to connect and fetch a stable unique id."""
     session = async_get_clientsession(hass)
     htp1 = Htp1(host=data[CONF_HOST], session=session)
-    await htp1.connect()
 
-    serial_number = htp1.serial_number
-    await htp1.stop()
-
-    return serial_number
+    try:
+        # Ensure validation cannot hang indefinitely.
+        await asyncio.wait_for(htp1.connect(), timeout=10)
+        serial_number = htp1.serial_number
+        return serial_number
+    finally:
+        # Always stop/cleanup even if connect or reading serial fails.
+        await htp1.stop()
 
 
 class ConfigFlow(_ConfigFlow, domain=DOMAIN):
@@ -35,24 +38,26 @@ class ConfigFlow(_ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None, host_default: str | None = None
+        self,
+        user_input: dict[str, Any] | None = None,
+        host_default: str | None = None,
     ) -> ConfigFlowResult:
-        """Handle a flow initialized by the user."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             try:
                 serial_number = await validate_input(self.hass, user_input)
-            except ConnectionException:
+            except (asyncio.TimeoutError, ConnectionException):
                 errors["base"] = "cannot_connect"
             except AioHtp1Exception:
-                LOGGER.exception("Unexpected exception")
+                LOGGER.debug("Validation failed with AioHtp1Exception", exc_info=True)
                 errors["base"] = "unknown"
             else:
                 await self.async_set_unique_id(serial_number)
                 self._abort_if_unique_id_configured()
+
                 host = user_input[CONF_HOST]
-                title = f"Monoprice HTP-1 device {host} added"
+                title = f"HTP-1 ({host})"
                 return self.async_create_entry(title=title, data=user_input)
 
         step_id = "reconfigure" if host_default else "user"
@@ -65,7 +70,8 @@ class ConfigFlow(_ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id=step_id, data_schema=schema, errors=errors)
 
     async def async_step_reconfigure(
-        self, user_input: Mapping[str, Any]
+        self,
+        user_input: Mapping[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Handle a reconfiguration of the config entry."""
         reconfigure_entry = self.hass.config_entries.async_get_entry(
@@ -76,7 +82,8 @@ class ConfigFlow(_ConfigFlow, domain=DOMAIN):
         )
         if user_input is not None:
             host_default = user_input.get(CONF_HOST, host_default)
+
         return await self.async_step_user(
-            user_input=dict(user_input),
+            user_input=dict(user_input) if user_input is not None else None,
             host_default=host_default,
         )

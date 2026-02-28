@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from homeassistant.components.number import NumberEntity
+import logging
+from typing import Any, Callable
+
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .avcui_number import build_avcui_number_entities
-from .const import DOMAIN
-from homeassistant.components.number import NumberMode
+from .const import DOMAIN, ui_lock_signal
+from .helpers import schedule_entity_update_threadsafe
 
+_LOGGER = logging.getLogger(__name__)
 
 # -------------------------------------------------------------
 #  HTP-1 Numbers
@@ -22,17 +26,36 @@ NUMBER_DEFINITIONS = [
         "get_fn": lambda h: h.volume,
         "set_fn": lambda h, v: setattr(h, "volume", v),
     },
-#    {
-#        "key": "secondvolume",
-#        "name": "Secondary Volume mso",
-#        "path": "/secondVolume",
-#        "min": lambda h: h.cal_vpl,
-#        "max": lambda h: h.cal_vph,
-#        "step": 1,
-#        "get_fn": lambda h: h.secondvolume,
-#        "set_fn": lambda h, v: setattr(h, "secondvolume", v),
-#        "entity_registry_enabled_default": False,
-#    },
+    {
+        "key": "secondary_volume",
+        "name": "Mix Out Volume",
+        "path": "/secondaryVolume",
+        "min": lambda h: h.cal_vpl,
+        "max": lambda h: h.cal_vph,
+        "step": 1,
+        "get_fn": lambda h: h.secondary_volume,
+        "set_fn": lambda h, v: setattr(h, "secondary_volume", v),
+    },
+    {
+        "key": "secondary_poweron_volume",
+        "name": "Mix Out Power On Volume",
+        "path": "/secondaryPowerOnVolume",
+        "min": lambda h: h.cal_vpl,
+        "max": lambda h: h.cal_vph,
+        "step": 1,
+        "get_fn": lambda h: h.secondary_poweron_volume,
+        "set_fn": lambda h, v: setattr(h, "secondary_poweron_volume", v),
+    },
+    {
+        "key": "dialogenh",
+        "name": "Dialog Enhance",
+        "path": "/dialogEnh",
+        "min": 0,
+        "max": 6,
+        "step": 1,
+        "get_fn": lambda h: h.dialogenh,
+        "set_fn": lambda h, v: setattr(h, "dialogenh", v),
+    },
     {
         "key": "bass_level",
         "name": "Bass Level",
@@ -102,10 +125,9 @@ NUMBER_DEFINITIONS = [
         "min": 1,
         "max": 3,
         "step": 1,
-        "get_fn": lambda htp1: htp1.cal_current_dirac_slot,
+        "get_fn": lambda h: h.cal_current_dirac_slot,
         "set_fn": lambda h, v: setattr(h, "cal_current_dirac_slot", int(v)),
     },
-
     {
         "key": "channeltrim_right",
         "name": "Trim Right",
@@ -186,7 +208,6 @@ NUMBER_DEFINITIONS = [
         "get_fn": lambda h: h.channeltrim_leftback,
         "set_fn": lambda h, v: setattr(h, "channeltrim_leftback", v),
     },
-
     {
         "key": "channeltrim_ltf",
         "name": "Trim Left Top Front",
@@ -329,16 +350,16 @@ NUMBER_DEFINITIONS = [
         "get_fn": lambda h: h.loudness_cal,
         "set_fn": lambda h, v: setattr(h, "loudness_cal", v),
     },
-
 ]
 
 
 # -------------------------------------------------------------
-# HTP-1 number-entities
+# HTP-1 number entities
 # -------------------------------------------------------------
 def build_htp1_numbers(htp1, entry_id: str):
     entities = []
     for cfg in NUMBER_DEFINITIONS:
+        mode = NumberMode.BOX if cfg.get("mode") == "box" else None
         entities.append(
             Htp1Number(
                 htp1=htp1,
@@ -351,7 +372,11 @@ def build_htp1_numbers(htp1, entry_id: str):
                 step=cfg["step"],
                 get_fn=cfg["get_fn"],
                 set_fn=cfg["set_fn"],
-                entity_registry_enabled_default=cfg.get("entity_registry_enabled_default", True),
+                entity_registry_enabled_default=cfg.get(
+                    "entity_registry_enabled_default", True
+                ),
+                icon=cfg.get("icon"),
+                mode=mode,
             )
         )
     return entities
@@ -365,10 +390,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities = []
     entities.extend(build_htp1_numbers(htp1, entry.entry_id))
-    entities.extend(build_avcui_number_entities(hass, htp1, entry.entry_id))
 
-
-    async_add_entities(entities)
+    # Request an immediate first update so entities don't sit at unknown.
+    async_add_entities(entities, True)
 
 
 # -------------------------------------------------------------
@@ -384,27 +408,37 @@ class Htp1Number(NumberEntity):
         key: str,
         name: str,
         path: str,
-        min: float,
-        max: float,
+        min,
+        max,
         step: float,
-        get_fn,
-        set_fn,
+        get_fn: Callable[[Any], Any],
+        set_fn: Callable[[Any, Any], None],
         entity_registry_enabled_default: bool = True,
+        icon: str | None = None,
+        mode: NumberMode | None = None,
     ):
         self._htp1 = htp1
         self._path = path
         self._get_fn = get_fn
         self._set_fn = set_fn
         self._key = key
+        self._entry_id = entry_id
 
         self._attr_unique_id = f"{entry_id}_{key}"
         self._attr_name = name
+        self._attr_icon = icon
         self._min = min
-        self._max = max        
+        self._max = max
         self._attr_native_step = step
-        if key == "cal_current_dirac_slot":
+
+        if mode is not None:
+            self._attr_mode = mode
+        elif key == "cal_current_dirac_slot":
+            # Backward compatibility: if definition doesn't specify mode, keep BOX for Dirac slot.
             self._attr_mode = NumberMode.BOX
+
         self._attr_entity_registry_enabled_default = entity_registry_enabled_default
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             manufacturer="Monoprice",
@@ -412,77 +446,147 @@ class Htp1Number(NumberEntity):
             name="HTP-1",
         )
 
-    @property
-    def available(self):
-        return self._htp1.connected
-
-
     def _resolve_limit(self, v):
         try:
             return v(self._htp1) if callable(v) else v
         except Exception:
+            _LOGGER.debug(
+                "Failed to resolve limit for key=%s path=%s",
+                self._key,
+                self._path,
+                exc_info=True,
+            )
             return None
 
     @property
     def native_min_value(self):
         value = self._resolve_limit(self._min)
-        if value is None:
-            return -70 if self._key in ("volume", "secondvolume") else self._min
-        return value
+        if value is not None:
+            return value
+
+        # Fallbacks when calibration values are not available yet.
+        if self._key in ("volume", "secondary_volume", "secondary_poweron_volume"):
+            return -70
+        return -12
 
     @property
     def native_max_value(self):
         value = self._resolve_limit(self._max)
-        if value is None:
-            return -1 if self._key in ("volume", "secondvolume") else self._max
-        return value
+        if value is not None:
+            return value
+
+        if self._key in ("volume", "secondary_volume", "secondary_poweron_volume"):
+            return -1
+        return 12
 
     @property
     def available(self) -> bool:
-        # Lock volume in standby
-        if self._key == "volume":
-            return self._htp1.connected and self._htp1.power is True
+        if not self._htp1.connected:
+            return False
 
-        return self._htp1.connected
+        # Volume must always be locked when the device is explicitly OFF/standby,
+        # regardless of the UI lock toggle state.
+        if self._key == "volume":
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return False
+            return True
+
+        # Other numbers: lock only if the UI lock toggle is enabled.
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return False
+
+        return True
 
     @property
     def native_value(self):
         try:
-            # Lock volume display when device is off/sleep
-            if self._key == "volume" and self._htp1.power is False:
-                return self._htp1.power_on_vol
+            # Lock volume display when device is off/sleep.
+            if self._key == "volume":
+                pwr = getattr(self._htp1, "power", None)
+                if pwr is False or pwr == 0:
+                    return self._htp1.power_on_vol
 
             v = self._get_fn(self._htp1)
             if v is None:
                 return None
 
+            # UI uses 1..3, device uses 0..2.
             if self._key == "cal_current_dirac_slot":
                 return int(v) + 1
 
             return v
         except Exception:
+            _LOGGER.debug(
+                "Failed to compute native_value for key=%s path=%s",
+                self._key,
+                self._path,
+                exc_info=True,
+            )
             return None
 
     async def async_set_native_value(self, value):
         async with self._htp1:
-            # UI uses 1..3, device expects 0..2
+            # UI uses 1..3, device expects 0..2.
             if self._key == "cal_current_dirac_slot":
                 value = int(value) - 1
 
-            # Lock volume when device is off/sleep
-            if self._key == "volume" and self._htp1.power is False:
-                value = self._htp1.power_on_vol
+            # Lock volume when device is off/sleep.
+            if self._key == "volume":
+                pwr = getattr(self._htp1, "power", None)
+                if pwr is False or pwr == 0:
+                    value = self._htp1.power_on_vol
 
             self._set_fn(self._htp1, value)
             await self._htp1.commit()
 
-
     async def async_added_to_hass(self):
-        self._htp1.subscribe(self._path, self._handle_update)
+        self._unsubs = []
 
+        # Subscribe to path updates from the device.
+        unsub = self._htp1.subscribe(self._path, self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        # Volume UI availability/value depends also on power and power-on volume.
         if self._key == "volume":
-            self._htp1.subscribe("/powerIsOn", self._handle_update)
-            self._htp1.subscribe("/powerOnVol", self._handle_update)
+            unsub = self._htp1.subscribe("/powerIsOn", self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
+            unsub = self._htp1.subscribe("/powerOnVol", self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
 
-    async def _handle_update(self, value):
-        self.async_write_ha_state()
+        # Availability depends on power/connection and UI lock.
+        if self._path != "/powerIsOn":
+            unsub = self._htp1.subscribe("/powerIsOn", self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("#connection", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry_id), self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            try:
+                unsub()
+            except Exception:
+                pass
+
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)

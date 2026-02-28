@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.restore_state import RestoreEntity  # <-- LISaYS
+from homeassistant.helpers.restore_state import RestoreEntity
+
 from .const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
 
 TRIGGER_NAMES = [
     "Trigger 1",
@@ -14,7 +18,7 @@ TRIGGER_NAMES = [
 ]
 
 
-class TriggerSwitch(SwitchEntity, RestoreEntity):  # <-- MUUTOS
+class TriggerSwitch(SwitchEntity, RestoreEntity):
     """HTP-1 trigger switch."""
 
     _attr_has_entity_name = True
@@ -23,7 +27,7 @@ class TriggerSwitch(SwitchEntity, RestoreEntity):  # <-- MUUTOS
         self._htp1 = htp1
         self._index = index
 
-        self._attr_unique_id = f"{entry_id}_trigger_{index+1}"
+        self._attr_unique_id = f"{entry_id}_trigger_{index + 1}"
         self._attr_name = TRIGGER_NAMES[index]
 
         self._attr_device_info = DeviceInfo(
@@ -34,36 +38,52 @@ class TriggerSwitch(SwitchEntity, RestoreEntity):  # <-- MUUTOS
         )
 
     async def async_added_to_hass(self):
-        await super().async_added_to_hass()  # <-- LISaYS
+        self._unsubs = []
+        await super().async_added_to_hass()
 
-        # Restore last known state across HA/integration restarts
-        last_state = await self.async_get_last_state()  # <-- LISaYS
+        # Restore last known state across HA/integration restarts.
+        last_state = await self.async_get_last_state()
         if last_state is not None:
             await self._htp1.trigger.set_local_state(
                 self._index,
                 last_state.state == "on",
                 notify=False,
             )
-            self.async_write_ha_state()
+            self.async_schedule_update_ha_state()
 
-        # update trigger switch when manager notifies
-        self._htp1.trigger.subscribe(
-            f"#trigger{self._index+1}", self._handle_trigger_update
+        # Update trigger switch when manager notifies.
+        unsub = self._htp1.trigger.subscribe(
+            f"#trigger{self._index + 1}", self._handle_trigger_update
         )
+        if callable(unsub):
+            self._unsubs.append(unsub)
 
-        # Listen to power state changes only once (avoid duplicates)
+        # Listen to power state changes only once (avoid duplicates).
         if self._index == 0:
-            self._htp1.subscribe("/powerIsOn", self._handle_power_update)
+            unsub = self._htp1.subscribe("/powerIsOn", self._handle_power_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
 
-    async def _handle_trigger_update(self, value):
-        self.async_write_ha_state()
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
 
-    async def _handle_power_update(self, value):
+    def _handle_trigger_update(self, value):
+        self.async_schedule_update_ha_state()
+
+    def _handle_power_update(self, value):
         power = bool(value)
-        self._htp1.trigger.handle_power_state(power)
+        try:
+            self._htp1.trigger.handle_power_state(power)
+        except Exception:
+            _LOGGER.debug("Failed to handle power update for triggers", exc_info=True)
 
     @property
-    def available(self):
+    def available(self) -> bool:
         return self._htp1.connected
 
     @property
@@ -72,11 +92,11 @@ class TriggerSwitch(SwitchEntity, RestoreEntity):  # <-- MUUTOS
 
     async def async_turn_on(self, **kwargs):
         await self._htp1.trigger.set_trigger(self._index, True)
-        self.async_write_ha_state()
+        # TriggerManager notifies back; no extra state write needed.
 
     async def async_turn_off(self, **kwargs):
         await self._htp1.trigger.set_trigger(self._index, False)
-        self.async_write_ha_state()
+        # TriggerManager notifies back; no extra state write needed.
 
 
 def build_trigger_switches(htp1, entry_id: str):

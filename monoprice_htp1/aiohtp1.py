@@ -1,7 +1,8 @@
 """The aiohttp Monoprice HTP-1 client library."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import inspect
+from collections.abc import Callable
 from contextlib import suppress
 from json import dumps, loads
 from logging import getLogger
@@ -23,7 +24,7 @@ class ConnectionException(AioHtp1Exception):
 class Htp1:
     RECONNECT_DELAY_INITIAL = 3
     RECONNECT_DELAY_MAX = 60
-    MSO_WAIT_TIMEOUT = 5
+    MSO_WAIT_TIMEOUT = 3
 
     log = getLogger("aiohtp1")
 
@@ -32,8 +33,8 @@ class Htp1:
         self.session = session
 
         self._websocket: aiohttp.ClientWebSocketResponse | None = None
-        self._receive_task: Awaitable[None] | None = None
-        self._try_connect_task: Awaitable[None] | None = None
+        self._receive_task: asyncio.Task | None = None
+        self._try_connect_task: asyncio.Task | None = None
        
         self._subscriptions: dict[str, list[Callable]] = {}
         self._state: dict[str, Any] | None = None
@@ -42,6 +43,10 @@ class Htp1:
 
         self._trying_to_connect = False
         self._ha_stopping = False
+
+        # If True, disable control entities (numbers/selects/buttons) when device is off/standby.
+        # Sensors remain available regardless.
+        self.lock_controls_when_off: bool = True
 
         self.trigger = TriggerManager(self)
 
@@ -81,8 +86,12 @@ class Htp1:
 
         # request initial state
         await self._websocket.send_str("getmso")
-        async with asyncio.timeout(self.MSO_WAIT_TIMEOUT):
-            await self._state_ready.wait()
+        try:
+            async with asyncio.timeout(self.MSO_WAIT_TIMEOUT):
+                await self._state_ready.wait()
+        except TimeoutError as err:
+            await self._disconnect()
+            raise ConnectionException("timeout waiting for initial state") from err
 
         await self._notify("#connection")
 
@@ -186,9 +195,13 @@ class Htp1:
                     self.log.exception("handler failed")
 
         finally:
+            # Clear state to avoid exposing stale values after disconnect.
+            self._state = None
             self._state_ready.clear()
+            self._websocket = None
+            self._receive_task = None
 
-            # schedule reconnect unless HA shutting down
+            # Schedule reconnect unless HA shutting down.
             if not self._ha_stopping:
                 asyncio.create_task(self.try_connect())
 
@@ -214,40 +227,84 @@ class Htp1:
 
 
     async def _cmd_msoupdate(self, payload):
+        # Device may send updates before the initial full state snapshot.
+        if self._state is None:
+            self.log.debug("msoupdate ignored before initial mso snapshot: %r", payload)
+            return
+
         if not isinstance(payload, list):
             payload = [payload]
 
         for piece in payload:
-            op = piece["op"]
-            path = piece["path"][1:].split("/")
-            target = self._state
-            final = path.pop()
+            try:
+                if not isinstance(piece, dict):
+                    continue
 
-            if op not in ("add", "replace"):
-                continue
+                op = piece.get("op")
+                if op not in ("add", "replace"):
+                    continue
 
-            for node in path:
+                raw_path = piece.get("path")
+                if not isinstance(raw_path, str) or not raw_path.startswith("/"):
+                    continue
+
+                parts = [p for p in raw_path[1:].split("/") if p]
+                if not parts:
+                    continue
+
+                target = self._state
+                final = parts.pop()
+
+                # Traverse intermediate nodes safely.
+                for node in parts:
+                    if isinstance(target, list):
+                        node = int(node)
+                    target = target[node]
+
+                value = piece.get("value")
+
+                # Apply final assignment, supporting both dict and list targets.
                 if isinstance(target, list):
-                    node = int(node)
-                target = target[node]
+                    idx = int(final)
+                    if idx == len(target) and op == "add":
+                        target.append(value)
+                    elif 0 <= idx < len(target):
+                        target[idx] = value
+                    else:
+                        self.log.debug("msoupdate list index out of range: %s", raw_path)
+                        continue
+                else:
+                    target[final] = value
 
-            value = piece["value"]
-            target[final] = value
+                await self._notify(raw_path, value)
 
-            await self._notify(piece["path"], value)
+            except (KeyError, IndexError, ValueError, TypeError):
+                self.log.debug("msoupdate apply failed: %r", piece, exc_info=True)
 
-
-
-    #
-    # SUBSCRIPTIONS
-    #
-
+    
     def subscribe(self, subject, callback):
-        self._subscriptions.setdefault(subject, []).append(callback)
+        """Subscribe to a subject. Callback may be sync or async."""
+        subs = self._subscriptions.setdefault(subject, [])
+        subs.append(callback)
+
+        def unsubscribe():
+            try:
+                subs.remove(callback)
+            except ValueError:
+                pass
+
+        return unsubscribe
+
 
     async def _notify(self, subject, value=None):
+        """Notify subscribers. Supports both sync and async callbacks."""
         for cb in self._subscriptions.get(subject, []):
-            await cb(value)
+            try:
+                res = cb(value)
+                if inspect.isawaitable(res):
+                    await res
+            except Exception:
+                self.log.debug("subscription callback failed for %s", subject, exc_info=True)
 
     #
     # TRANSACTION SYSTEM
@@ -266,6 +323,9 @@ class Htp1:
     async def commit(self):
         if not self._tx:
             return False
+
+        if not self._websocket:
+            raise AioHtp1Exception("Not connected")
 
         ops = [{"op": "replace", "path": k, "value": v} for k, v in self._tx.items()]
         payload = dumps(ops, separators=(",", ":"))
@@ -287,36 +347,46 @@ class Htp1:
 
 
     #
-    # ALL YOUR PROPERTY ACCESSORS (unchanged)
+    # ALL PROPERTY ACCESSORS
     #
-
-
-    ## Operations
 
 
     @property
     def serial_number(self):
         """Retrieve the HTP-1 device's serial number."""
-        return self._state["versions"]["SerialNumber"]
+        if not self._state:
+            return None
+        versions = self._state.get("versions")
+        if not isinstance(versions, dict):
+            return None
+        return versions.get("SerialNumber")
 
     @property
     def cal_vph(self):
-        """Retrieve the HTP-1 device's calibration max volume."""
-        return self._state["cal"]["vph"]
+        if not self._state:
+            return None
+        cal = self._state.get("cal")
+        if not isinstance(cal, dict):
+            return None
+        return cal.get("vph")
 
     @property
     def cal_vpl(self):
-        """Retrieve the HTP-1 device's calibration min volume."""
-        return self._state["cal"]["vpl"]
+        if not self._state:
+            return None
+        cal = self._state.get("cal")
+        if not isinstance(cal, dict):
+            return None
+        return cal.get("vpl")
 
     @property
     def power_on_vol(self):
         """Retrieve the HTP-1 power-on volume."""
-        try:
+        if self._tx is not None and "/powerOnVol" in self._tx:
             return self._tx["/powerOnVol"]
-        except (TypeError, KeyError):
-            pass
-        return self._state["powerOnVol"]
+        if not self._state:
+            return None
+        return self._state.get("powerOnVol")
 
     @property
     def cal_current_slot_name(self):
@@ -372,11 +442,11 @@ class Htp1:
 
     @property
     def muted(self):
-        try:
+        if self._tx is not None and "/muted" in self._tx:
             return self._tx["/muted"]
-        except Exception:
-            pass
-        return self._state.get("muted") if self._state else False
+        if not self._state:
+            return False
+        return self._state.get("muted", False)
 
 
     @muted.setter
@@ -388,29 +458,26 @@ class Htp1:
 
     @property
     def volume(self):
-        try:
+        if self._tx is not None and "/volume" in self._tx:
             return self._tx["/volume"]
-        except Exception:
-            pass
-        return self._state.get("volume") if self._state else None
+        if not self._state:
+            return None
+        return self._state.get("volume")
 
 
     @volume.setter
     def volume(self, value):
-        """Set the HTP-1 device's volume."""
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/volume"] = value
 
     @property
     def power(self):
-        try:
+        if self._tx is not None and "/powerIsOn" in self._tx:
             return self._tx["/powerIsOn"]
-        except Exception:
-            pass
-        if self._state and "powerIsOn" in self._state:
-            return self._state["powerIsOn"]
-        return None
+        if not self._state:
+            return None
+        return self._state.get("powerIsOn")
 
     @power.setter
     def power(self, value):
@@ -425,10 +492,9 @@ class Htp1:
         if not self._state:
             return None
 
-        try:
-            _id = self._tx.get("/input") if self._tx else None
-        except Exception:
-            _id = None
+        _id = None
+        if self._tx is not None and "/input" in self._tx:
+            _id = self._tx["/input"]
 
         if _id is None:
             _id = self._state.get("input")
@@ -448,7 +514,7 @@ class Htp1:
             if value == info["label"]:
                 self._tx["/input"] = _id
                 return
-        raise AioHtp1Exception("input '{value}' not found")
+        raise AioHtp1Exception(f"input '{value}' not found")
 
 
     @property
@@ -462,36 +528,116 @@ class Htp1:
 
 
     @property
-    def secondvolume(self):
+    def secondary_volume(self):
+        if not self._state:
+            return None
         try:
-            return self._state["secondVolume"]
+            return self._state["secondaryVolume"]
         except Exception:
             return None
 
-    @secondvolume.setter
-    def secondvolume(self, value):
+    @secondary_volume.setter
+    def secondary_volume(self, value):
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
-        self._tx["/secondVolume"] = value
+        self._tx["/secondaryVolume"] = value
+
+
+    @property
+    def secondary_poweron_volume(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["secondaryPowerOnVolume"]
+        except Exception:
+            return None
+
+    @secondary_poweron_volume.setter
+    def secondary_poweron_volume(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/secondaryPowerOnVolume"] = value
+
+
+    @property
+    def secondary_muted(self):
+        if self._tx is not None and "/secondaryMuted" in self._tx:
+            return self._tx["/secondaryMuted"]
+        if not self._state:
+            return False
+        return self._state.get("secondaryMuted", False)
+
+
+    @secondary_muted.setter
+    def secondary_muted(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/secondaryMuted"] = value
+
+
+    @property
+    def dialnorm(self):
+        if self._tx is not None and "/dialnorm" in self._tx:
+            return self._tx["/dialnorm"]
+        if not self._state:
+            return None
+        return self._state.get("dialnorm")
+
+    @dialnorm.setter
+    def dialnorm(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/dialnorm"] = value
+
+
+    @property
+    def dialogenh(self):
+        if not self._state:
+            return None
+        try:
+            return self._state["dialogEnh"]
+        except Exception:
+            return None
+
+    @dialogenh.setter
+    def dialogenh(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/dialogEnh"] = value
+
+
+    @property
+    def dirac_active(self):
+        if not self._state:
+            return None
+        if self._tx is not None and "/cal/diracactive" in self._tx:
+            return self._tx["/cal/diracactive"]
+        cal = self._state.get("cal")
+        if not isinstance(cal, dict):
+            return None
+        return cal.get("diracactive")
+
+    @dirac_active.setter
+    def dirac_active(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/cal/diracactive"] = value
 
 
     @property
     def upmix(self):
         if not self._state:
             return None
-        try:
-            return self._tx.get("/upmix/select")
-        except Exception:
-            pass
-        try:
-            return self._state["upmix"]["select"]
-        except Exception:
+        if self._tx is not None and "/upmix/select" in self._tx:
+            return self._tx["/upmix/select"]
+        upmix = self._state.get("upmix")
+        if not isinstance(upmix, dict):
             return None
+        return upmix.get("select")
 
 
     @upmix.setter
     def upmix(self, value):
-        """Set the HTP-1 device's upmix."""
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/upmix/select"] = value
@@ -507,6 +653,20 @@ class Htp1:
             ]
         except Exception:
             return []
+
+    @property
+    def loudness_curve(self):
+        if not self._state:
+            return None
+        if self._tx is not None and "/loudnessCurve" in self._tx:
+            return self._tx["/loudnessCurve"]
+        return self._state.get("loudnessCurve")
+
+    @loudness_curve.setter
+    def loudness_curve(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/loudnessCurve"] = value
 
     @property
     def bass_level(self):
@@ -582,7 +742,34 @@ class Htp1:
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/eq/tc"] = value
-        
+
+    @property
+    def widesynth(self):
+        if not self._state:
+            return False
+        try:
+            return self._state["upmix"]["dts"]["ws"]
+        except Exception:
+            return False
+
+    @widesynth.setter
+    def widesynth(self, value: bool):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/upmix/dts/ws"] = value
+
+    @property
+    def aurohs(self):
+        if not self._state:
+            return False
+        return self._state["upmix"]["auro"]["highSides"] == "on"           
+
+    @aurohs.setter
+    def aurohs(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/upmix/auro/highSides"] = "on" if value else "off"
+
     @property
     def loudness_cal(self):
         if not self._state:
@@ -672,10 +859,10 @@ class Htp1:
     @property
     def video_hdrstatus(self):
         try:
-            return self._state["videostat"]["HDRstatus"]
+            value = self._state["videostat"].get("HDRstatus")
+            return value if value else "SDR"
         except Exception:
-            return None
-
+            return "SDR"
 
     @property
     def peq_status(self):
