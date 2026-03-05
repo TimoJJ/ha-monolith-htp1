@@ -290,7 +290,6 @@ class Htp1LoudnessCurveSelect(Htp1BaseSelect):
             return None
 
     async def async_select_option(self, option: str) -> None:
-        # Noudata UI lockia kuten muissakin selecteissä
         if getattr(self._htp1, "lock_controls_when_off", True):
             pwr = getattr(self._htp1, "power", None)
             if pwr is False or pwr == 0:
