@@ -19,5 +19,33 @@
         }
       }
     }
+  },
+  "services": {
+    "load_beq_filter": {
+      "name": "Load BEQ filter",
+      "description": "Search the BEQ catalogue and load a bass correction filter onto the HTP-1. Provide either a movie title or TMDB ID.",
+      "fields": {
+        "title": {
+          "name": "Movie title",
+          "description": "Movie title to search for in the BEQ catalogue (case-insensitive substring match)."
+        },
+        "tmdb_id": {
+          "name": "TMDB ID",
+          "description": "The Movie Database (TMDB) ID for the movie or TV show."
+        },
+        "year": {
+          "name": "Year",
+          "description": "Release year to narrow down search results when multiple matches exist."
+        },
+        "codec": {
+          "name": "Audio codec",
+          "description": "Preferred audio codec to filter results (e.g. Atmos, DTS:X, TrueHD)."
+        }
+      }
+    },
+    "clear_beq_filter": {
+      "name": "Clear BEQ filter",
+      "description": "Remove the currently loaded BEQ bass correction filter from the HTP-1."
+    }
   }
 }

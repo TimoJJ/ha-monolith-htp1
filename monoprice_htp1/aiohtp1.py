@@ -12,6 +12,10 @@ from .trigger_manager import TriggerManager
 import aiodns
 import aiohttp
 
+FILTER_TYPE_MAP = {"PeakingEQ": 0, "LowShelf": 1, "HighShelf": 2}
+BEQ_SLOT_START = 8
+BEQ_SLOT_END = 15
+
 
 class AioHtp1Exception(Exception):
     pass
@@ -241,7 +245,7 @@ class Htp1:
                     continue
 
                 op = piece.get("op")
-                if op not in ("add", "replace"):
+                if op not in ("add", "replace", "remove"):
                     continue
 
                 raw_path = piece.get("path")
@@ -260,6 +264,14 @@ class Htp1:
                     if isinstance(target, list):
                         node = int(node)
                     target = target[node]
+
+                if op == "remove":
+                    if isinstance(target, dict):
+                        target.pop(final, None)
+                    elif isinstance(target, list):
+                        del target[int(final)]
+                    await self._notify(raw_path, None)
+                    continue
 
                 value = piece.get("value")
 
@@ -1193,3 +1205,124 @@ class Htp1:
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/channeltrim/channels/rhb"] = value
+
+    # ------------------------------------------------------------------
+    # BEQ (Bass EQ) support
+    # ------------------------------------------------------------------
+
+    @property
+    def beq_active(self) -> str | None:
+        """Title of the currently loaded BEQ filter, or None."""
+        if not self._state:
+            return None
+        return self._state.get("peq", {}).get("beqActive")
+
+    async def send_raw_ops(self, ops: list[dict]) -> bool:
+        """Send a list of raw JSON-Patch ops via changemso."""
+        if not ops:
+            return True
+        if not self._websocket:
+            raise AioHtp1Exception("Not connected")
+        payload = dumps(ops, separators=(",", ":"))
+        await self._websocket.send_str(f"changemso {payload}")
+        return True
+
+    def _get_sub_channels(self) -> list[str]:
+        """Return sub channel keys that are present in the speaker config."""
+        if not self._state:
+            return ["sub1"]
+        speakers = self._state.get("speakers", {}).get("groups", {})
+        subs = []
+        for key, val in speakers.items():
+            if key.startswith("sub") and isinstance(val, dict):
+                if val.get("present", False):
+                    subs.append(key)
+        return subs or ["sub1"]
+
+    def _find_empty_peq_slot(self, start_slot: int = BEQ_SLOT_START) -> int | None:
+        """Find the first empty PEQ slot in the BEQ range (8-15)."""
+        if not self._state:
+            return None
+        peq = self._state.get("peq", {})
+        slots = peq.get("slots", [])
+        sub_channels = self._get_sub_channels()
+        ch = sub_channels[0] if sub_channels else "sub1"
+        for i in range(start_slot, min(BEQ_SLOT_END + 1, len(slots))):
+            ch_data = slots[i].get("channels", {}).get(ch, {})
+            if ch_data.get("gaindB", 0) == 0 and not ch_data.get("beq"):
+                return i
+        return None
+
+    async def clear_beq(self) -> bool:
+        """Clear all BEQ filters from PEQ slots 8-15."""
+        if not self._state:
+            return False
+        ops: list[dict] = []
+        peq = self._state.get("peq", {})
+        slots = peq.get("slots", [])
+        sub_channels = self._get_sub_channels()
+
+        for i in range(BEQ_SLOT_START, min(BEQ_SLOT_END + 1, len(slots))):
+            channels = slots[i].get("channels", {})
+            for ch in sub_channels:
+                ch_data = channels.get(ch, {})
+                if ch_data.get("beq"):
+                    ops.extend([
+                        {"op": "replace", "path": f"/peq/slots/{i}/channels/{ch}/Fc", "value": 100},
+                        {"op": "replace", "path": f"/peq/slots/{i}/channels/{ch}/gaindB", "value": 0},
+                        {"op": "replace", "path": f"/peq/slots/{i}/channels/{ch}/Q", "value": 1},
+                        {"op": "replace", "path": f"/peq/slots/{i}/channels/{ch}/FilterType", "value": 0},
+                        {"op": "remove", "path": f"/peq/slots/{i}/channels/{ch}/beq"},
+                    ])
+
+        if "beqActive" in peq:
+            ops.append({"op": "remove", "path": "/peq/beqActive"})
+
+        if ops:
+            return await self.send_raw_ops(ops)
+        return True
+
+    async def load_beq(self, title: str, filters: list[dict]) -> bool:
+        """Load BEQ filters into PEQ slots 8-15 on all sub channels."""
+        if not self._state:
+            return False
+
+        await self.clear_beq()
+
+        sub_channels = self._get_sub_channels()
+        if not sub_channels:
+            return False
+
+        ops: list[dict] = []
+        next_slot = BEQ_SLOT_START
+
+        for filt in filters:
+            slot_idx = self._find_empty_peq_slot(next_slot)
+            if slot_idx is None:
+                self.log.warning("No empty PEQ slot for BEQ filter")
+                break
+
+            ft = FILTER_TYPE_MAP.get(filt.get("type", "PeakingEQ"), 0)
+            freq = filt.get("freq", 100)
+            gain = filt.get("gain", 0)
+            q = filt.get("q", 1)
+
+            for ch in sub_channels:
+                ops.extend([
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Fc", "value": freq},
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/gaindB", "value": gain},
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Q", "value": q},
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/FilterType", "value": ft},
+                    {"op": "add", "path": f"/peq/slots/{slot_idx}/channels/{ch}/beq", "value": True},
+                ])
+            next_slot = slot_idx + 1
+
+        ops.extend([
+            {"op": "add", "path": "/peq/beqActive", "value": title},
+            {"op": "replace", "path": "/peq/peqsw", "value": True},
+        ])
+
+        success = await self.send_raw_ops(ops)
+        if success:
+            self.log.info("BEQ loaded: %s (%d filters)", title, len(filters))
+        return success
