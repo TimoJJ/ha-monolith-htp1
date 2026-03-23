@@ -551,6 +551,13 @@ SENSOR_DEFINITIONS = [
         "value_fn": lambda htp1: STATE_ON if htp1.peq_status else STATE_OFF,
         "icon": "mdi:music-note",
     },
+    {
+        "key": "beq_active",
+        "name": "BEQ Filter",
+        "path": "/peq/beqActive",
+        "value_fn": lambda htp1: htp1.beq_active or "None",
+        "icon": "mdi:equalizer",
+    },
 ]
 
 

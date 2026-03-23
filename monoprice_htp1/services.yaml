@@ -1,0 +1,35 @@
+load_beq_filter:
+  target:
+    entity:
+      integration: monoprice_htp1
+      domain: media_player
+  fields:
+    title:
+      example: "The Matrix"
+      required: false
+      selector:
+        text:
+    tmdb_id:
+      example: "603"
+      required: false
+      selector:
+        text:
+    year:
+      example: "1999"
+      required: false
+      selector:
+        number:
+          min: 1900
+          max: 2100
+          mode: box
+    codec:
+      example: "Atmos"
+      required: false
+      selector:
+        text:
+
+clear_beq_filter:
+  target:
+    entity:
+      integration: monoprice_htp1
+      domain: media_player

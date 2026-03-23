@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import voluptuous as vol
+
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -9,10 +11,14 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv, entity_platform
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
+from . import beq
 from .aiohtp1 import Htp1
 from .const import DOMAIN, LOGGER, ui_lock_signal
 from .helpers import schedule_entity_update_threadsafe
@@ -31,6 +37,17 @@ UPMIX_RAW_TO_UI = {
 UPMIX_UI_TO_RAW = {v: k for k, v in UPMIX_RAW_TO_UI.items()}
 
 
+SERVICE_LOAD_BEQ = "load_beq_filter"
+SERVICE_CLEAR_BEQ = "clear_beq_filter"
+
+LOAD_BEQ_SCHEMA = {
+    vol.Optional("title"): cv.string,
+    vol.Optional("tmdb_id"): cv.string,
+    vol.Optional("year"): vol.Coerce(int),
+    vol.Optional("codec"): cv.string,
+}
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -39,6 +56,18 @@ async def async_setup_entry(
     """Set up the Monoprice HTP-1 config entry."""
     htp1: Htp1 = hass.data[DOMAIN][entry.entry_id]
     async_add_entities((Htp1MediaPlayer(htp1=htp1, entry_id=entry.entry_id),), True)
+
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(
+        SERVICE_LOAD_BEQ,
+        LOAD_BEQ_SCHEMA,
+        "async_load_beq_filter",
+    )
+    platform.async_register_entity_service(
+        SERVICE_CLEAR_BEQ,
+        {},
+        "async_clear_beq_filter",
+    )
 
 
 class Htp1MediaPlayer(MediaPlayerEntity):
@@ -343,3 +372,77 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         except Exception:
             LOGGER.debug("Failed to read source_list", exc_info=True)
             return []
+
+    # BEQ Services
+
+    async def async_load_beq_filter(
+        self,
+        title: str | None = None,
+        tmdb_id: str | None = None,
+        year: int | None = None,
+        codec: str | None = None,
+    ) -> None:
+        """Search the BEQ catalogue and load a bass correction filter."""
+        if not title and not tmdb_id:
+            raise HomeAssistantError(
+                "Either 'title' or 'tmdb_id' must be provided"
+            )
+
+        if not self.available:
+            raise HomeAssistantError("HTP-1 is not connected")
+
+        session = async_get_clientsession(self.hass)
+        catalogue = await beq.async_fetch_catalogue(session)
+
+        if not catalogue:
+            raise HomeAssistantError("Failed to fetch BEQ catalogue")
+
+        if tmdb_id:
+            tmdb_int = beq.parse_tmdb_id(tmdb_id)
+            if tmdb_int is None:
+                raise HomeAssistantError(f"Invalid TMDB ID: {tmdb_id}")
+            results = beq.search_by_tmdb_id(catalogue, tmdb_int, codec=codec)
+        else:
+            results = beq.search_by_title(
+                catalogue, title, year=year, codec=codec
+            )
+
+        if not results:
+            search_desc = f"TMDB ID {tmdb_id}" if tmdb_id else f"'{title}'"
+            if year:
+                search_desc += f" ({year})"
+            if codec:
+                search_desc += f" [{codec}]"
+            raise HomeAssistantError(
+                f"No BEQ filter found for {search_desc}"
+            )
+
+        entry = beq.best_match(results)
+        filters = beq.prepare_filters(entry)
+        entry_title = entry.get("title", "Unknown")
+        beq_label = entry.get("underlying", entry_title)
+
+        if not filters:
+            raise HomeAssistantError(
+                f"BEQ entry '{entry_title}' has no filters"
+            )
+
+        LOGGER.info(
+            "Loading BEQ filter: %s (%d filters, %d matches found)",
+            beq_label,
+            len(filters),
+            len(results),
+        )
+
+        success = await self._htp1.load_beq(beq_label, filters)
+        if not success:
+            raise HomeAssistantError("Failed to load BEQ filter on device")
+
+    async def async_clear_beq_filter(self) -> None:
+        """Clear the currently loaded BEQ filter."""
+        if not self.available:
+            raise HomeAssistantError("HTP-1 is not connected")
+
+        success = await self._htp1.clear_beq()
+        if not success:
+            raise HomeAssistantError("Failed to clear BEQ filter on device")
