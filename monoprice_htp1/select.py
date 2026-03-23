@@ -276,7 +276,7 @@ class Htp1LoudnessCurveSelect(Htp1BaseSelect):
 
     @property
     def options(self) -> list[str]:
-        # UI-nimet Home Assistantiin
+        # UI labels for Home Assistant
         return list(self._RAW_TO_UI.values())
 
     @property
