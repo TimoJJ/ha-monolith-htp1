@@ -391,6 +391,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities = []
     entities.extend(build_htp1_numbers(htp1, entry.entry_id))
 
+    # Mix-out tracking parameters (local RestoreEntity numbers, no device path).
+    from .mix_out_tracker import build_mix_out_tracking_numbers
+    entities.extend(build_mix_out_tracking_numbers(htp1, entry.entry_id))
+
     # Request an immediate first update so entities don't sit at unknown.
     async_add_entities(entities, True)
 
