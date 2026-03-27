@@ -13,8 +13,9 @@ import aiodns
 import aiohttp
 
 FILTER_TYPE_MAP = {"PeakingEQ": 0, "LowShelf": 1, "HighShelf": 2}
-BEQ_SLOT_START = 0
-BEQ_SLOT_END = 7
+# FilterType values: 0=PeakingEQ, 1=LowShelf, 2=HighShelf, 3=AllPass, 4=LPF, 5=HPF
+GAIN_INDEPENDENT_FILTER_TYPES = {3, 4, 5}  # Active even when gaindB == 0
+BEQ_SLOT_COUNT = 16  # Total PEQ slots (0-15)
 
 
 def _num(v):
@@ -1246,22 +1247,28 @@ class Htp1:
                     subs.append(key)
         return subs or ["sub1"]
 
-    def _find_empty_peq_slot(self, start_slot: int = BEQ_SLOT_START) -> int | None:
-        """Find the first empty PEQ slot in the BEQ range (8-15)."""
+    def _find_empty_peq_slot(self, start_slot: int = 0) -> int | None:
+        """Find the first empty PEQ slot (0-15), skipping user filters."""
         if not self._state:
             return None
         peq = self._state.get("peq", {})
         slots = peq.get("slots", [])
         sub_channels = self._get_sub_channels()
         ch = sub_channels[0] if sub_channels else "sub1"
-        for i in range(start_slot, min(BEQ_SLOT_END + 1, len(slots))):
+        for i in range(start_slot, min(BEQ_SLOT_COUNT, len(slots))):
             ch_data = slots[i].get("channels", {}).get(ch, {})
-            if ch_data.get("gaindB", 0) == 0 and not ch_data.get("beq"):
+            if (ch_data.get("gaindB", 0) == 0
+                    and ch_data.get("FilterType", 0) not in GAIN_INDEPENDENT_FILTER_TYPES
+                    and not ch_data.get("beq")):
                 return i
         return None
 
     async def clear_beq(self) -> bool:
-        """Clear all BEQ-tagged filters from all PEQ slots on all sub channels."""
+        """Clear all BEQ-tagged filters from all PEQ slots on all sub channels.
+
+        Scans all 16 slots and all possible sub channels regardless of current
+        speaker config — matches BassEq.vue clearAllExistingBeqFilters() behavior.
+        """
         if not self._state:
             return False
         ops: list[dict] = []
@@ -1290,11 +1297,12 @@ class Htp1:
         return True
 
     async def load_beq(self, title: str, filters: list[dict]) -> bool:
-        """Load BEQ filters into PEQ slots on all sub channels.
+        """Load BEQ filters into available PEQ slots on all active sub channels.
 
-        Builds a single changemso batch: clear existing BEQ-tagged slots,
-        remove beqActive, write new filter data, set beqActive, enable PEQ.
-        Matches the HTP-1 web UI (BassEq.vue) behavior.
+        Matches WebUI BassEq.vue behavior: starts from slot 0, skips slots
+        that have user filters (gaindB != 0 without beq flag).
+        Builds a single atomic changemso batch: clear existing BEQ-tagged
+        slots, write new filter data, set beqActive, enable PEQ.
         """
         if not self._state:
             return False
@@ -1308,7 +1316,10 @@ class Htp1:
 
         peq = self._state.get("peq", {})
         slots = peq.get("slots", [])
-        for i in range(min(16, len(slots))):
+
+        # Phase 1: clear all existing BEQ-tagged entries (all 16 slots, all 5 subs).
+        cleared_slots: set[int] = set()
+        for i in range(min(BEQ_SLOT_COUNT, len(slots))):
             channels = slots[i].get("channels", {})
             for ch in all_subs:
                 ch_data = channels.get(ch, {})
@@ -1320,37 +1331,49 @@ class Htp1:
                         {"op": "replace", "path": f"/peq/slots/{i}/channels/{ch}/FilterType", "value": 0},
                         {"op": "remove", "path": f"/peq/slots/{i}/channels/{ch}/beq"},
                     ])
+                    cleared_slots.add(i)
 
         if "beqActive" in peq:
             ops.append({"op": "remove", "path": "/peq/beqActive"})
 
-        slot_idx = 0
-        for filt in filters:
-            while slot_idx < len(slots):
-                ch = sub_channels[0]
-                if slots[slot_idx].get("channels", {}).get(ch, {}).get("gaindB", 0) == 0:
-                    break
-                slot_idx += 1
+        # Phase 2: find available slots from 0-15, skipping user filters.
+        # A slot is available if it was just cleared or is empty (gaindB == 0).
+        ch0 = sub_channels[0]
+        available: list[int] = []
+        for i in range(min(BEQ_SLOT_COUNT, len(slots))):
+            if i in cleared_slots:
+                available.append(i)
             else:
+                ch_data = slots[i].get("channels", {}).get(ch0, {})
+                if (ch_data.get("gaindB", 0) == 0
+                        and ch_data.get("FilterType", 0) not in GAIN_INDEPENDENT_FILTER_TYPES):
+                    available.append(i)
+
+        # Phase 3: write new BEQ filters into available slots.
+        for idx, filt in enumerate(filters):
+            if idx >= len(available):
                 self.log.warning("No more empty PEQ slots for BEQ filter")
                 break
 
+            slot_idx = available[idx]
             ft = FILTER_TYPE_MAP.get(filt.get("type", "PeakingEQ"), 0)
             freq = _num(filt.get("freq", 100))
             gain = _num(filt.get("gain", 0))
             q = _num(filt.get("q", 1))
 
             for ch in sub_channels:
-                ops.append({"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Fc", "value": freq})
-                ops.append({"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/gaindB", "value": gain})
-                ops.append({"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Q", "value": q})
-                if ft != 0:
-                    ops.append({"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/FilterType", "value": ft})
-                ops.append({"op": "add", "path": f"/peq/slots/{slot_idx}/channels/{ch}/beq", "value": True})
-            slot_idx += 1
+                ops.extend([
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Fc", "value": freq},
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/gaindB", "value": gain},
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Q", "value": q},
+                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/FilterType", "value": ft},
+                    {"op": "add", "path": f"/peq/slots/{slot_idx}/channels/{ch}/beq", "value": True},
+                ])
 
-        ops.append({"op": "add", "path": "/peq/beqActive", "value": title})
-        ops.append({"op": "replace", "path": "/peq/peqsw", "value": True})
+        ops.extend([
+            {"op": "add", "path": "/peq/beqActive", "value": title},
+            {"op": "replace", "path": "/peq/peqsw", "value": True},
+        ])
 
         self.log.info("BEQ sending %d ops for %s", len(ops), title)
         self.log.debug("BEQ ops: %s", dumps(ops, separators=(",", ":")))

@@ -9,7 +9,8 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import STATE_OFF, STATE_ON
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN
 
