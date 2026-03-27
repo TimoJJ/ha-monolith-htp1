@@ -1236,9 +1236,16 @@ class Htp1:
         return True
 
     def _get_sub_channels(self) -> list[str]:
-        """Return sub channel keys that are present in the speaker config."""
+        """Return sub channel keys for PEQ/BEQ operations.
+
+        When PEQ location is "pre", the device uses a single "lfe" channel
+        instead of individual sub1-sub5 channels.
+        """
         if not self._state:
             return ["sub1"]
+        peq_location = self._state.get("peq", {}).get("location", "post")
+        if peq_location == "pre":
+            return ["lfe"]
         speakers = self._state.get("speakers", {}).get("groups", {})
         subs = []
         for key, val in speakers.items():
@@ -1274,7 +1281,7 @@ class Htp1:
         ops: list[dict] = []
         peq = self._state.get("peq", {})
         slots = peq.get("slots", [])
-        all_subs = ["sub1", "sub2", "sub3", "sub4", "sub5"]
+        all_subs = ["sub1", "sub2", "sub3", "sub4", "sub5", "lfe"]
 
         for i in range(min(16, len(slots))):
             channels = slots[i].get("channels", {})
@@ -1312,7 +1319,7 @@ class Htp1:
             return False
 
         ops: list[dict] = []
-        all_subs = ["sub1", "sub2", "sub3", "sub4", "sub5"]
+        all_subs = ["sub1", "sub2", "sub3", "sub4", "sub5", "lfe"]
 
         peq = self._state.get("peq", {})
         slots = peq.get("slots", [])
