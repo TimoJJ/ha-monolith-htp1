@@ -1343,39 +1343,38 @@ class Htp1:
         if "beqActive" in peq:
             ops.append({"op": "remove", "path": "/peq/beqActive"})
 
-        # Phase 2: find available slots from 0-15, skipping user filters.
-        # A slot is available if it was just cleared or is empty (gaindB == 0).
-        ch0 = sub_channels[0]
-        available: list[int] = []
-        for i in range(min(BEQ_SLOT_COUNT, len(slots))):
-            if i in cleared_slots:
-                available.append(i)
-            else:
-                ch_data = slots[i].get("channels", {}).get(ch0, {})
-                if (ch_data.get("gaindB", 0) == 0
-                        and ch_data.get("FilterType", 0) not in GAIN_INDEPENDENT_FILTER_TYPES):
-                    available.append(i)
+        # Phase 2+3: find available slots and write BEQ filters per channel.
+        # Each channel finds its own free slots independently, matching
+        # WebUI BassEq.vue applyBeqFilters() behavior.
+        num_slots = min(BEQ_SLOT_COUNT, len(slots))
+        for ch in sub_channels:
+            slot = 0
+            for filt in filters:
+                # Find next available slot for this channel
+                while slot < num_slots:
+                    if slot in cleared_slots:
+                        break
+                    ch_data = slots[slot].get("channels", {}).get(ch, {})
+                    if (ch_data.get("gaindB", 0) == 0
+                            and ch_data.get("FilterType", 0) not in GAIN_INDEPENDENT_FILTER_TYPES):
+                        break
+                    slot += 1
+                if slot >= num_slots:
+                    self.log.warning("No more empty PEQ slots for BEQ on %s", ch)
+                    break
 
-        # Phase 3: write new BEQ filters into available slots.
-        for idx, filt in enumerate(filters):
-            if idx >= len(available):
-                self.log.warning("No more empty PEQ slots for BEQ filter")
-                break
-
-            slot_idx = available[idx]
-            ft = FILTER_TYPE_MAP.get(filt.get("type", "PeakingEQ"), 0)
-            freq = _num(filt.get("freq", 100))
-            gain = _num(filt.get("gain", 0))
-            q = _num(filt.get("q", 1))
-
-            for ch in sub_channels:
+                ft = FILTER_TYPE_MAP.get(filt.get("type", "PeakingEQ"), 0)
+                freq = _num(filt.get("freq", 100))
+                gain = _num(filt.get("gain", 0))
+                q = _num(filt.get("q", 1))
                 ops.extend([
-                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Fc", "value": freq},
-                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/gaindB", "value": gain},
-                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/Q", "value": q},
-                    {"op": "replace", "path": f"/peq/slots/{slot_idx}/channels/{ch}/FilterType", "value": ft},
-                    {"op": "add", "path": f"/peq/slots/{slot_idx}/channels/{ch}/beq", "value": True},
+                    {"op": "replace", "path": f"/peq/slots/{slot}/channels/{ch}/Fc", "value": freq},
+                    {"op": "replace", "path": f"/peq/slots/{slot}/channels/{ch}/gaindB", "value": gain},
+                    {"op": "replace", "path": f"/peq/slots/{slot}/channels/{ch}/Q", "value": q},
+                    {"op": "replace", "path": f"/peq/slots/{slot}/channels/{ch}/FilterType", "value": ft},
+                    {"op": "add", "path": f"/peq/slots/{slot}/channels/{ch}/beq", "value": True},
                 ])
+                slot += 1
 
         ops.extend([
             {"op": "add", "path": "/peq/beqActive", "value": title},
