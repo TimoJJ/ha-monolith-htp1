@@ -459,6 +459,124 @@ class Htp1LocalNumber(NumberEntity, RestoreEntity):
 
 
 # ---------------------------------------------------------------------------
+# Mute tracking switch
+# ---------------------------------------------------------------------------
+
+class Htp1MixOutMuteTrackingSwitch(SwitchEntity, RestoreEntity):
+    """HA switch that syncs Mix Out mute with main mute.
+
+    When enabled, subscribes to /muted and writes the same state to
+    /secondaryMuted. Defaults to off. State is persisted via RestoreEntity.
+    """
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:volume-mute"
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(self, htp1, entry_id: str) -> None:
+        self._htp1 = htp1
+        self._entry_id = entry_id
+        self._enabled = False
+
+        self._attr_unique_id = f"{entry_id}_mix_out_mute_tracking"
+        self._attr_name = "Mix Out Mute Tracking"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            manufacturer="Monoprice",
+            model="HTP-1",
+            name="HTP-1",
+        )
+
+        self._unsubs: list[Callable[[], None]] = []
+        self._unsub_mute: Callable[[], None] | None = None
+
+    @property
+    def available(self) -> bool:
+        return bool(getattr(self._htp1, "connected", False))
+
+    @property
+    def is_on(self) -> bool:
+        return self._enabled
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        last = await self.async_get_last_state()
+        self._enabled = (last is not None and last.state == "on")
+        if self._enabled:
+            self._subscribe_mute()
+
+        unsub = self._htp1.subscribe("#connection", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry_id), self._handle_update
+        )
+        if callable(unsub_lock):
+            self._unsubs.append(unsub_lock)
+
+        schedule_entity_update_threadsafe(self)
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._unsubscribe_mute()
+        for unsub in self._unsubs:
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+        self._unsubs = []
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self._enabled = True
+        self._subscribe_mute()
+        # Sync immediately on enable.
+        await self._sync_mute()
+        schedule_entity_update_threadsafe(self)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self._enabled = False
+        self._unsubscribe_mute()
+        schedule_entity_update_threadsafe(self)
+
+    def _subscribe_mute(self) -> None:
+        if self._unsub_mute is not None:
+            return
+        self._unsub_mute = self._htp1.subscribe("/muted", self._on_mute_change)
+
+    def _unsubscribe_mute(self) -> None:
+        if self._unsub_mute is not None:
+            try:
+                self._unsub_mute()
+            except Exception:
+                pass
+            self._unsub_mute = None
+
+    def _on_mute_change(self, value=None) -> None:
+        if not self._enabled:
+            return
+        import asyncio
+        asyncio.run_coroutine_threadsafe(self._sync_mute(), self.hass.loop)
+
+    async def _sync_mute(self) -> None:
+        main_muted = getattr(self._htp1, "muted", False)
+        secondary_muted = getattr(self._htp1, "secondary_muted", None)
+        if secondary_muted == main_muted:
+            return
+        try:
+            async with self._htp1:
+                self._htp1.secondary_muted = main_muted
+                await self._htp1.commit()
+        except Exception:
+            _LOGGER.debug("Mix Out Mute Tracking: sync failed", exc_info=True)
+
+    def _handle_update(self, *args) -> None:
+        schedule_entity_update_threadsafe(self)
+
+
+# ---------------------------------------------------------------------------
 # Non-linear curve enable switch
 # ---------------------------------------------------------------------------
 
@@ -597,6 +715,7 @@ def build_mix_out_tracking_switches(htp1, entry_id: str) -> list:
     return [
         Htp1MixOutTrackingSwitch(htp1, entry_id),
         Htp1MixOutCurveSwitch(htp1, entry_id),
+        Htp1MixOutMuteTrackingSwitch(htp1, entry_id),
     ]
 
 
