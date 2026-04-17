@@ -58,14 +58,7 @@ SWITCH_DEFINITIONS = [
         "get_fn": lambda h: h.loudness_status,
         "set_fn": lambda h, v: setattr(h, "loudness_status", v),
     },
-    {
-        "key": "dialnorm",
-        "name": "Dialnorm",
-        "path": "/dialnorm",
-        "icon": "mdi:tune",
-        "get_fn": lambda h: h.dialnorm,
-        "set_fn": lambda h, v: setattr(h, "dialnorm", v),
-    },
+
     {
         "key": "widesynth",
         "name": "Widesynth",

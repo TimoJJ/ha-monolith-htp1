@@ -29,6 +29,13 @@ UPMIX_DISPLAY = {
 LOUDNESS_CURVE_DISPLAY = {
     "iso": "ISO 226:2003",
     "vintage": "Vintage",
+    "vintageCustom": "Vintage Custom",
+}
+
+NIGHT_MODE_DISPLAY = {
+    "off": "Off",
+    "on": "On",
+    "auto": "Auto",
 }
 
 
@@ -200,13 +207,24 @@ SENSOR_DEFINITIONS = [
     {
         "key": "loudness_curve",
         "name": "Loudness Curve",
-        "path": "/loudnessCurve",
+        "path": "/lcvc/selectedCurve",
         "value_fn": lambda htp1: (
-            LOUDNESS_CURVE_DISPLAY.get(htp1.loudness_curve, htp1.loudness_curve)
-            if htp1.loudness_curve is not None
+            LOUDNESS_CURVE_DISPLAY.get(htp1.lcvc_selected_curve, htp1.lcvc_selected_curve)
+            if htp1.lcvc_selected_curve is not None
             else None
         ),
         "icon": "mdi:chart-bell-curve",
+    },
+    {
+        "key": "night_mode",
+        "name": "Night Mode",
+        "path": "/night",
+        "value_fn": lambda htp1: (
+            NIGHT_MODE_DISPLAY.get(str(htp1.night_mode), str(htp1.night_mode))
+            if htp1.night_mode is not None
+            else None
+        ),
+        "icon": "mdi:weather-night",
     },
     {
         "key": "lipsync_delay",

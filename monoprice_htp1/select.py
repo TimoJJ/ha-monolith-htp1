@@ -33,6 +33,8 @@ async def async_setup_entry(
         Htp1UpmixSelect(htp1, entry),
         Htp1LoudnessCurveSelect(htp1, entry),
         Htp1DiracActiveSelect(htp1, entry),
+        Htp1NightModeSelect(htp1, entry),
+        Htp1DialnormSelect(htp1, entry),
     ]
 
 
@@ -265,6 +267,7 @@ class Htp1LoudnessCurveSelect(Htp1BaseSelect):
     _RAW_TO_UI: dict[str, str] = {
         "iso": "ISO 226:2003",
         "vintage": "Vintage",
+        "vintageCustom": "Vintage Custom",
     }
 
     # UI -> raw
@@ -282,7 +285,7 @@ class Htp1LoudnessCurveSelect(Htp1BaseSelect):
     @property
     def current_option(self) -> str | None:
         try:
-            raw = self._htp1.loudness_curve
+            raw = self._htp1.lcvc_selected_curve or self._htp1.loudness_curve
             if raw is None:
                 return None
             return self._RAW_TO_UI.get(str(raw))
@@ -299,8 +302,16 @@ class Htp1LoudnessCurveSelect(Htp1BaseSelect):
         if raw is None:
             return
 
+        loudness_raw = "vintage" if raw == "vintageCustom" else raw
         async with self._htp1:
-            self._htp1.loudness_curve = raw
+            if self._htp1.lcvc_selected_curve == "vintageCustom" and raw != "vintageCustom":
+                self._htp1.save_lcvc_params()
+            self._htp1.loudness_curve = loudness_raw
+            self._htp1.lcvc_selected_curve = raw
+            if raw == "vintageCustom":
+                self._htp1.restore_lcvc_saved_params()
+            elif raw == "vintage":
+                self._htp1.reset_lcvc_vintage_defaults()
             await self._htp1.commit()
 
         schedule_entity_update_threadsafe(self)
@@ -308,7 +319,7 @@ class Htp1LoudnessCurveSelect(Htp1BaseSelect):
     async def async_added_to_hass(self):
         self._unsubs = []
 
-        unsub = self._htp1.subscribe("/loudnessCurve", self._handle_update)
+        unsub = self._htp1.subscribe("/lcvc/selectedCurve", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
 
@@ -392,6 +403,178 @@ class Htp1DiracActiveSelect(Htp1BaseSelect):
         self._unsubs = []
 
         unsub = self._htp1.subscribe("/cal/diracactive", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("/powerIsOn", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("#connection", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry.entry_id), self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            unsub()
+
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)
+
+
+class Htp1NightModeSelect(Htp1BaseSelect):
+    _attr_name = "Night Mode"
+    _attr_icon = "mdi:weather-night"
+
+    # raw -> UI
+    _RAW_TO_UI: dict[str, str] = {
+        "off": "Off",
+        "on": "On",
+        "auto": "Auto",
+    }
+
+    # UI -> raw
+    _UI_TO_RAW: dict[str, str] = {v: k for k, v in _RAW_TO_UI.items()}
+
+    def __init__(self, htp1, entry: ConfigEntry) -> None:
+        super().__init__(htp1, entry)
+        self._attr_unique_id = f"{entry.entry_id}_night_mode"
+
+    @property
+    def options(self) -> list[str]:
+        return list(self._RAW_TO_UI.values())
+
+    @property
+    def current_option(self) -> str | None:
+        try:
+            raw = self._htp1.night_mode
+            if raw is None:
+                return None
+            return self._RAW_TO_UI.get(str(raw))
+        except Exception:
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return
+
+        raw = self._UI_TO_RAW.get(option)
+        if raw is None:
+            return
+
+        async with self._htp1:
+            self._htp1.night_mode = raw
+            await self._htp1.commit()
+
+        schedule_entity_update_threadsafe(self)
+
+    async def async_added_to_hass(self):
+        self._unsubs = []
+
+        unsub = self._htp1.subscribe("/night", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("/powerIsOn", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("#connection", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry.entry_id), self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            unsub()
+
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)
+
+
+class Htp1DialnormSelect(Htp1BaseSelect):
+    _attr_name = "Dialnorm"
+    _attr_icon = "mdi:tune"
+    _attr_entity_registry_enabled_default = False
+
+    # raw -> UI: device sends JSON booleans (True/False) or string "auto"
+    # str() is used on the raw value in current_option, so keys are "True"/"False"/"auto"
+    _RAW_TO_UI: dict[str, str] = {
+        "True": "On",
+        "False": "Off",
+        "auto": "Auto",
+    }
+
+    # UI -> raw: map back to actual device values (bool or string)
+    _UI_TO_RAW: dict[str, object] = {
+        "On": True,
+        "Off": False,
+        "Auto": "auto",
+    }
+
+    def __init__(self, htp1, entry: ConfigEntry) -> None:
+        super().__init__(htp1, entry)
+        self._attr_unique_id = f"{entry.entry_id}_dialnorm"
+
+    @property
+    def options(self) -> list[str]:
+        return list(self._RAW_TO_UI.values())
+
+    @property
+    def current_option(self) -> str | None:
+        try:
+            raw = self._htp1.dialnorm
+            if raw is None:
+                return None
+            return self._RAW_TO_UI.get(str(raw))
+        except Exception:
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return
+
+        raw = self._UI_TO_RAW.get(option)
+        if raw is None:
+            return
+
+        async with self._htp1:
+            self._htp1.dialnorm = raw
+            await self._htp1.commit()
+
+        schedule_entity_update_threadsafe(self)
+
+    async def async_added_to_hass(self):
+        self._unsubs = []
+
+        unsub = self._htp1.subscribe("/dialnorm", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
 

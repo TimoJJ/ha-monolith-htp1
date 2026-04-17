@@ -645,6 +645,21 @@ class Htp1:
 
 
     @property
+    def night_mode(self):
+        if not self._state:
+            return None
+        if self._tx is not None and "/night" in self._tx:
+            return self._tx["/night"]
+        return self._state.get("night")
+
+    @night_mode.setter
+    def night_mode(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/night"] = value
+
+
+    @property
     def upmix(self):
         if not self._state:
             return None
@@ -687,6 +702,74 @@ class Htp1:
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/loudnessCurve"] = value
+
+    @property
+    def lcvc_selected_curve(self):
+        if not self._state:
+            return None
+        if self._tx is not None and "/lcvc/selectedCurve" in self._tx:
+            return self._tx["/lcvc/selectedCurve"]
+        lcvc = self._state.get("lcvc")
+        if not isinstance(lcvc, dict):
+            return None
+        return lcvc.get("selectedCurve")
+
+    @lcvc_selected_curve.setter
+    def lcvc_selected_curve(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/lcvc/selectedCurve"] = value
+
+    _LCVC_VINTAGE_DEFAULTS = {
+        "/lcvc/freq":     20,
+        "/lcvc/lsh/freq": 63,
+        "/lcvc/lsh/gain": 0.65,
+        "/lcvc/lsh/bw":   3.0227,
+        "/lcvc/peq/freq": 1000,
+        "/lcvc/peq/gain": 0.045,
+        "/lcvc/peq/bw":   4.7529,
+        "/lcvc/hsh/freq": 12700,
+        "/lcvc/hsh/gain": 0.3,
+        "/lcvc/hsh/bw":   3.0227,
+    }
+
+    def save_lcvc_params(self):
+        """Copy /lcvc/* → /lcvc/saved/* in current transaction."""
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        lcvc = self._state.get("lcvc") if self._state else None
+        if not isinstance(lcvc, dict):
+            return
+        self._tx["/lcvc/saved/freq"] = lcvc.get("freq", self._LCVC_VINTAGE_DEFAULTS["/lcvc/freq"])
+        for sub in ("lsh", "peq", "hsh"):
+            sub_dict = lcvc.get(sub) or {}
+            for key in ("freq", "gain", "bw"):
+                self._tx[f"/lcvc/saved/{sub}/{key}"] = sub_dict.get(
+                    key, self._LCVC_VINTAGE_DEFAULTS[f"/lcvc/{sub}/{key}"]
+                )
+
+    def restore_lcvc_saved_params(self):
+        """Copy /lcvc/saved/* → /lcvc/* in current transaction."""
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        lcvc = self._state.get("lcvc") if self._state else None
+        if not isinstance(lcvc, dict):
+            return
+        saved = lcvc.get("saved")
+        if not isinstance(saved, dict):
+            return
+        self._tx["/lcvc/freq"] = saved.get("freq", self._LCVC_VINTAGE_DEFAULTS["/lcvc/freq"])
+        for sub in ("lsh", "peq", "hsh"):
+            sub_dict = saved.get(sub) or {}
+            for key in ("freq", "gain", "bw"):
+                path = f"/lcvc/{sub}/{key}"
+                self._tx[path] = sub_dict.get(key, self._LCVC_VINTAGE_DEFAULTS[path])
+
+    def reset_lcvc_vintage_defaults(self):
+        """Set /lcvc/* to vintage defaults in current transaction."""
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx.update(self._LCVC_VINTAGE_DEFAULTS)
 
     @property
     def bass_level(self):
