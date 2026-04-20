@@ -326,6 +326,29 @@ class Htp1:
             except Exception:
                 self.log.debug("subscription callback failed for %s", subject, exc_info=True)
 
+        # When a parent path is updated with a dict, also notify child-path subscribers.
+        # The device sends e.g. "/videostat" as a whole-object replace, so sensors
+        # subscribed to "/videostat/HDRstatus" would otherwise never fire.
+        if isinstance(value, dict):
+            prefix = subject + "/"
+            for sub_path, cbs in list(self._subscriptions.items()):
+                if not sub_path.startswith(prefix):
+                    continue
+                relative = sub_path[len(prefix):]
+                child_value = value
+                try:
+                    for part in relative.split("/"):
+                        child_value = child_value[part]
+                except (KeyError, TypeError):
+                    child_value = None
+                for cb in cbs:
+                    try:
+                        res = cb(child_value)
+                        if inspect.isawaitable(res):
+                            await res
+                    except Exception:
+                        self.log.debug("subscription callback failed for %s", sub_path, exc_info=True)
+
     #
     # TRANSACTION SYSTEM
     #

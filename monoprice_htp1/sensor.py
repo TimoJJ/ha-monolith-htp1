@@ -598,6 +598,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class Htp1Sensor(SensorEntity):
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(
         self,
