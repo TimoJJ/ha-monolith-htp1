@@ -350,6 +350,17 @@ NUMBER_DEFINITIONS = [
         "get_fn": lambda h: h.loudness_cal,
         "set_fn": lambda h, v: setattr(h, "loudness_cal", v),
     },
+    {
+        "key": "shaker_trim",
+        "name": "Seat Shaker Trim",
+        "path": "/shaker/trim",
+        "min": -24,
+        "max": 6,
+        "step": 1,
+        "icon": "mdi:vibrate",
+        "get_fn": lambda h: h.shaker_trim,
+        "set_fn": lambda h, v: setattr(h, "shaker_trim", v),
+    },
 ]
 
 
@@ -392,8 +403,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities.extend(build_htp1_numbers(htp1, entry.entry_id))
 
     # Mix-out tracking parameters (local RestoreEntity numbers, no device path).
-    from .mix_out_tracker import build_mix_out_tracking_numbers
-    entities.extend(build_mix_out_tracking_numbers(htp1, entry.entry_id))
+    # from .mix_out_tracker import build_mix_out_tracking_numbers
+    # entities.extend(build_mix_out_tracking_numbers(htp1, entry.entry_id))
 
     # Request an immediate first update so entities don't sit at unknown.
     async_add_entities(entities, True)
@@ -404,6 +415,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 # -------------------------------------------------------------
 class Htp1Number(NumberEntity):
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -496,6 +508,16 @@ class Htp1Number(NumberEntity):
                 return False
             return True
 
+        # Shaker trim is unavailable when shaker output is off.
+        if self._key == "shaker_trim":
+            if getattr(self._htp1, "shaker_output", None) == "off":
+                return False
+
+        # Mix Out volumes are unavailable when the shaker routes through Mix Out.
+        if self._key in ("secondary_volume", "secondary_poweron_volume"):
+            if getattr(self._htp1, "shaker_output", None) in ("mono17", "diff17"):
+                return False
+
         # Other numbers: lock only if the UI lock toggle is enabled.
         if getattr(self._htp1, "lock_controls_when_off", True):
             pwr = getattr(self._htp1, "power", None)
@@ -572,6 +594,12 @@ class Htp1Number(NumberEntity):
         unsub = self._htp1.subscribe("#connection", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
+
+        # Shaker/Mix Out availability depends on shaker output routing.
+        if self._key in ("shaker_trim", "secondary_volume", "secondary_poweron_volume"):
+            unsub = self._htp1.subscribe("/shaker/output", self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
 
         self._unsub_ui_lock = async_dispatcher_connect(
             self.hass, ui_lock_signal(self._entry_id), self._handle_update

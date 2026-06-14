@@ -577,6 +577,39 @@ SENSOR_DEFINITIONS = [
         "value_fn": lambda htp1: htp1.beq_active or "None",
         "icon": "mdi:equalizer",
     },
+    {
+        "key": "shaker_mute",
+        "name": "Seat Shaker Mute",
+        "path": "/shaker/mute",
+        "value_fn": lambda htp1: STATE_ON if htp1.shaker_mute else STATE_OFF,
+        "icon": "mdi:vibrate-off",
+    },
+    {
+        "key": "shaker_trim",
+        "name": "Seat Shaker Trim",
+        "path": "/shaker/trim",
+        "value_fn": lambda htp1: htp1.shaker_trim,
+        "icon": "mdi:vibrate",
+    },
+    {
+        "key": "shaker_active_preset",
+        "name": "Seat Shaker Active Preset",
+        "path": "/shaker/activePreset",
+        "value_fn": lambda htp1: str(int(htp1.shaker_active_preset) + 1) if htp1.shaker_active_preset is not None else None,
+        "icon": "mdi:vibrate",
+    },
+    {
+        "key": "shaker_output",
+        "name": "Seat Shaker Output",
+        "path": "/shaker/output",
+        "value_fn": lambda htp1: {
+            "off":     "Off",
+            "nextsub": "Sub Out",
+            "mono17":  "Mix Out",
+            "diff17":  "Mix Out Diff",
+        }.get(htp1.shaker_output, htp1.shaker_output),
+        "icon": "mdi:vibrate",
+    },
 ]
 
 

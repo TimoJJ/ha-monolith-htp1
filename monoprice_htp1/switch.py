@@ -75,6 +75,14 @@ SWITCH_DEFINITIONS = [
         "get_fn": lambda h: h.aurohs,
         "set_fn": lambda h, v: setattr(h, "aurohs", v),
     },
+    {
+        "key": "shaker_mute",
+        "name": "Seat Shaker Mute",
+        "path": "/shaker/mute",
+        "icon": "mdi:vibrate-off",
+        "get_fn": lambda h: h.shaker_mute,
+        "set_fn": lambda h, v: setattr(h, "shaker_mute", v),
+    },
 ]
 
 
@@ -113,8 +121,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities.extend(build_trigger_switches(htp1, entry.entry_id))
 
     # Mix-out volume tracking toggles (switch platform only).
-    from .mix_out_tracker import build_mix_out_tracking_switches
-    entities.extend(build_mix_out_tracking_switches(htp1, entry.entry_id))
+    # from .mix_out_tracker import build_mix_out_tracking_switches
+    # entities.extend(build_mix_out_tracking_switches(htp1, entry.entry_id))
 
     # Request an immediate first update so entities don't sit at unknown.
     async_add_entities(entities, True)
@@ -127,6 +135,7 @@ class Htp1UiLockSwitch(SwitchEntity, RestoreEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_entity_registry_enabled_default = True
     _attr_icon = "mdi:lock"
 
@@ -198,6 +207,7 @@ class Htp1UiLockSwitch(SwitchEntity, RestoreEntity):
 
 class Htp1Switch(SwitchEntity):
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -240,6 +250,16 @@ class Htp1Switch(SwitchEntity):
         # Power must always be available.
         if self._key == "power":
             return True
+
+        # Shaker controls are unavailable when shaker output is off.
+        if self._key == "shaker_mute":
+            if getattr(self._htp1, "shaker_output", None) == "off":
+                return False
+
+        # Mix Out Mute is unavailable when the shaker routes through Mix Out.
+        if self._key == "secondary_muted":
+            if getattr(self._htp1, "shaker_output", None) in ("mono17", "diff17"):
+                return False
 
         # Lock switches when device is explicitly OFF/standby and UI lock is enabled.
         if getattr(self._htp1, "lock_controls_when_off", True):
@@ -303,6 +323,12 @@ class Htp1Switch(SwitchEntity):
         unsub = self._htp1.subscribe("#connection", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
+
+        # Shaker/Mix Out availability depends on shaker output routing.
+        if self._key in ("shaker_mute", "secondary_muted"):
+            unsub = self._htp1.subscribe("/shaker/output", self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
 
         # And UI lock changes
         self._unsub_ui_lock = async_dispatcher_connect(

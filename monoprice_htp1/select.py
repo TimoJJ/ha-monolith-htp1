@@ -35,6 +35,7 @@ async def async_setup_entry(
         Htp1DiracActiveSelect(htp1, entry),
         Htp1NightModeSelect(htp1, entry),
         Htp1DialnormSelect(htp1, entry),
+        Htp1ShakerPresetSelect(htp1, entry),
     ]
 
 
@@ -53,6 +54,7 @@ class Htp1BaseSelect(SelectEntity):
     """Base class for HTP-1 selects."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, htp1, entry: ConfigEntry) -> None:
         self._htp1 = htp1
@@ -575,6 +577,96 @@ class Htp1DialnormSelect(Htp1BaseSelect):
         self._unsubs = []
 
         unsub = self._htp1.subscribe("/dialnorm", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("/powerIsOn", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        unsub = self._htp1.subscribe("#connection", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry.entry_id), self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            unsub()
+
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)
+
+
+class Htp1ShakerPresetSelect(Htp1BaseSelect):
+    _attr_name = "Seat Shaker Active Preset"
+    _attr_icon = "mdi:vibrate"
+
+    # UI shows 1–6, device stores 0–5
+    _OPTIONS = ["1", "2", "3", "4", "5", "6"]
+
+    def __init__(self, htp1, entry) -> None:
+        super().__init__(htp1, entry)
+        self._attr_unique_id = f"{entry.entry_id}_shaker_active_preset"
+
+    @property
+    def available(self) -> bool:
+        if not self._htp1.connected:
+            return False
+        if getattr(self._htp1, "shaker_output", None) == "off":
+            return False
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return False
+        return True
+
+    @property
+    def options(self) -> list:
+        return self._OPTIONS
+
+    @property
+    def current_option(self):
+        try:
+            raw = self._htp1.shaker_active_preset
+            if raw is None:
+                return None
+            return str(int(raw) + 1)
+        except Exception:
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return
+
+        async with self._htp1:
+            # UI value 1–6 → device value 0–5
+            self._htp1.shaker_active_preset = str(int(option) - 1)
+            await self._htp1.commit()
+
+        schedule_entity_update_threadsafe(self)
+
+    async def async_added_to_hass(self):
+        self._unsubs = []
+
+        unsub = self._htp1.subscribe("/shaker/activePreset", self._handle_update)
+        if callable(unsub):
+            self._unsubs.append(unsub)
+
+        # Availability depends on shaker output routing.
+        unsub = self._htp1.subscribe("/shaker/output", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
 

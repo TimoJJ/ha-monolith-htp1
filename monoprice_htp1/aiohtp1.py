@@ -1321,6 +1321,63 @@ class Htp1:
         self._tx["/channeltrim/channels/rhb"] = value
 
     # ------------------------------------------------------------------
+    # Seat Shaker
+    # ------------------------------------------------------------------
+
+    @property
+    def shaker_mute(self) -> bool:
+        try:
+            val = self._state["shaker"]["mute"]
+            if isinstance(val, str):
+                return val.lower() == "on"
+            return bool(val)
+        except Exception:
+            return False
+
+    @shaker_mute.setter
+    def shaker_mute(self, value: bool):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/shaker/mute"] = "on" if value else "off"
+
+    @property
+    def shaker_trim(self):
+        try:
+            return self._state["shaker"]["trim"]
+        except Exception:
+            return None
+
+    @shaker_trim.setter
+    def shaker_trim(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/shaker/trim"] = value
+
+    @property
+    def shaker_active_preset(self) -> str | None:
+        try:
+            val = self._state["shaker"]["activePreset"]
+            # false means no preset is active
+            if val is False or val is None:
+                return None
+            return str(int(val))
+        except Exception:
+            return None
+
+    @shaker_active_preset.setter
+    def shaker_active_preset(self, value: str):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/shaker/activePreset"] = int(value)
+
+    @property
+    def shaker_output(self) -> str | None:
+        try:
+            return self._state["shaker"]["output"]
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------------
     # BEQ (Bass EQ) support
     # ------------------------------------------------------------------
 
