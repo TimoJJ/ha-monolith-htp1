@@ -123,7 +123,7 @@ NUMBER_DEFINITIONS = [
         "icon": "mdi:playlist-check",
         "mode": "box",
         "min": 1,
-        "max": 3,
+        "max": 6,
         "step": 1,
         "get_fn": lambda h: h.cal_current_dirac_slot,
         "set_fn": lambda h, v: setattr(h, "cal_current_dirac_slot", int(v)),
