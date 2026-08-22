@@ -29,6 +29,5 @@ Delete old version's `monoprice_htp1` directory from custom_components. Copy `mo
 
 ## Credits
 
-https://github.com/ross/ha-monoprice-htp1 — used as an initial starting point.
-
+https://github.com/ross/ha-monoprice-htp1 — used as a starting point.
 
