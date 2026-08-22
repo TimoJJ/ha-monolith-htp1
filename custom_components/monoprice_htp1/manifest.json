@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/TimoJJ/ha-monolith-htp1/issues",
   "loggers": ["aiohtp1", "monoprice_htp1"],
   "requirements": ["aiodns>=3.0.0"],
-  "version": "1.4.1"
+  "version": "1.5.0"
 }
