@@ -28,7 +28,7 @@ Input your HTP-1 IP-address and after about 10-15 seconds sensors should appear 
 
 **Via HACS:** HACS will show an update notification when a new version is released; click **Update**, then restart Home Assistant.
 
-**Manual:** Delete the old `custom_components/monoprice_htp1` directory, copy the new `custom_components/monoprice_htp1` folder from the updated release .zip into `custom_components`, and restart Home Assistant.
+**Manual:** Delete the old `monoprice_htp1` directory from `custom components`, copy the new `monoprice_htp1` folder from the updated release .zip into `custom_components`, and restart Home Assistant.
 
 ## Screens
 
