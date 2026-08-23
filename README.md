@@ -35,7 +35,11 @@ Input your HTP-1 IP-address and after about 10-15 seconds sensors should appear 
 
 ![Screenshot 1](assets/pic1.png)  ![Screenshot 2](assets/pic2.png)
 
+<br>
+
 ![Screenshot 3](assets/pic3.png)  ![Screenshot 4](assets/pic4.png)
+
+<br>
 
 ![Screenshot 5](assets/pic5.png)
 
