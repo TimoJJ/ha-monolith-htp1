@@ -38,6 +38,25 @@ NIGHT_MODE_DISPLAY = {
     "auto": "Auto",
 }
 
+# /status/SurroundMode is display text built by the device (mso.cpp getSurroundMode),
+# not an MSO selection value. Labels follow the front-panel status page.
+SURROUND_MODE_DISPLAY = {
+    "Direct": "No Upmix",
+    "Native": "No Upmix",
+    "Native Dolby": "Native",
+    "Native DTS": "Native",
+    "Native Dolby ATMOS": "Native",
+    "Native DTS:X": "Native",
+    "Dolby Surround": "Dolby Surround",
+    "DTS Neural:X": "DTS Neural:X",
+    "Auro3D": "Auro-3D",
+    "AuroMatic": "Auromatic",
+    "MultiChannel Stereo": "All Stereo",
+    "MultiChannel Mono": "All Mono",
+    "Wide Synth": "Wide Synth",
+    "unrecognized": "None",
+}
+
 
 
 SENSOR_DEFINITIONS = [
@@ -288,7 +307,7 @@ SENSOR_DEFINITIONS = [
         "key": "surroundmode",
         "name": "Audio Surround Mode",
         "path": "/status/SurroundMode",
-        "value_fn": lambda htp1: htp1.surroundmode,
+        "value_fn": lambda htp1: SURROUND_MODE_DISPLAY.get(htp1.surroundmode, htp1.surroundmode),
         "icon": "mdi:speaker",
         "entity_category": EntityCategory.DIAGNOSTIC,
     },
