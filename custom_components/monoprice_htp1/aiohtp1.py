@@ -36,6 +36,7 @@ class Htp1:
     RECONNECT_DELAY_INITIAL = 3
     RECONNECT_DELAY_MAX = 60
     MSO_WAIT_TIMEOUT = 3
+    CAL_SLOT_COUNT = 6  # the device always keeps 6 calibration slots (/cal/slots/0..5)
 
     log = getLogger("aiohtp1")
 
@@ -469,8 +470,8 @@ class Htp1:
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         v = int(value)
-        if v < 0 or v > 2:
-            raise AioHtp1Exception("slot out of range (0-2)")
+        if v < 0 or v >= self.CAL_SLOT_COUNT:
+            raise AioHtp1Exception(f"slot out of range (0-{self.CAL_SLOT_COUNT - 1})")
         self._tx["/cal/currentdiracslot"] = v
 
 

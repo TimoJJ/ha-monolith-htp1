@@ -37,53 +37,60 @@ class ConfigFlow(_ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    async def _async_connect(
+        self, host: str, errors: dict[str, str]
+    ) -> str | None:
+        """Connect to the unit and return its serial number; set errors on failure."""
+        try:
+            return await validate_input(self.hass, {CONF_HOST: host})
+        except (asyncio.TimeoutError, ConnectionException):
+            errors["base"] = "cannot_connect"
+        except AioHtp1Exception:
+            LOGGER.debug("Validation failed with AioHtp1Exception", exc_info=True)
+            errors["base"] = "unknown"
+        return None
+
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
-        host_default: str | None = None,
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                serial_number = await validate_input(self.hass, user_input)
-            except (asyncio.TimeoutError, ConnectionException):
-                errors["base"] = "cannot_connect"
-            except AioHtp1Exception:
-                LOGGER.debug("Validation failed with AioHtp1Exception", exc_info=True)
-                errors["base"] = "unknown"
-            else:
+            host = user_input[CONF_HOST]
+            serial_number = await self._async_connect(host, errors)
+            if not errors:
                 await self.async_set_unique_id(serial_number)
                 self._abort_if_unique_id_configured()
 
-                host = user_input[CONF_HOST]
-                title = f"HTP-1 ({host})"
-                return self.async_create_entry(title=title, data=user_input)
+                return self.async_create_entry(title=f"HTP-1 ({host})", data=user_input)
 
-        step_id = "reconfigure" if host_default else "user"
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST, default=host_default): str,
-            }
-        )
-
-        return self.async_show_form(step_id=step_id, data_schema=schema, errors=errors)
+        schema = vol.Schema({vol.Required(CONF_HOST): str})
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_reconfigure(
         self,
         user_input: Mapping[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle a reconfiguration of the config entry."""
-        reconfigure_entry = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
-        host_default = (
-            reconfigure_entry.data[CONF_HOST] if reconfigure_entry is not None else None
-        )
-        if user_input is not None:
-            host_default = user_input.get(CONF_HOST, host_default)
+        """Change the host of an existing entry; it must be the same unit."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
 
-        return await self.async_step_user(
-            user_input=dict(user_input) if user_input is not None else None,
-            host_default=host_default,
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            serial_number = await self._async_connect(host, errors)
+            if not errors:
+                await self.async_set_unique_id(serial_number)
+                self._abort_if_unique_id_mismatch(reason="wrong_device")
+
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=f"HTP-1 ({host})",
+                    data_updates={CONF_HOST: host},
+                )
+
+        current_host = (user_input or entry.data).get(CONF_HOST)
+        schema = vol.Schema({vol.Required(CONF_HOST, default=current_host): str})
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=schema, errors=errors
         )

@@ -539,7 +539,7 @@ class Htp1Number(NumberEntity):
             if v is None:
                 return None
 
-            # UI uses 1..3, device uses 0..2.
+            # UI uses 1..6, device uses 0..5.
             if self._key == "cal_current_dirac_slot":
                 return int(v) + 1
 
@@ -555,7 +555,7 @@ class Htp1Number(NumberEntity):
 
     async def async_set_native_value(self, value):
         async with self._htp1:
-            # UI uses 1..3, device expects 0..2.
+            # UI uses 1..6, device expects 0..5.
             if self._key == "cal_current_dirac_slot":
                 value = int(value) - 1
 

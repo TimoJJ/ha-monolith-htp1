@@ -524,20 +524,14 @@ class Htp1DialnormSelect(Htp1BaseSelect):
     _attr_icon = "mdi:tune"
     _attr_entity_registry_enabled_default = False
 
-    # raw -> UI: device sends JSON booleans (True/False) or string "auto"
-    # str() is used on the raw value in current_option, so keys are "True"/"False"/"auto"
+    # The device stores /dialnorm as the strings "on", "off" or "auto".
     _RAW_TO_UI: dict[str, str] = {
-        "True": "On",
-        "False": "Off",
+        "on": "On",
+        "off": "Off",
         "auto": "Auto",
     }
 
-    # UI -> raw: map back to actual device values (bool or string)
-    _UI_TO_RAW: dict[str, object] = {
-        "On": True,
-        "Off": False,
-        "Auto": "auto",
-    }
+    _UI_TO_RAW: dict[str, str] = {v: k for k, v in _RAW_TO_UI.items()}
 
     def __init__(self, htp1, entry: ConfigEntry) -> None:
         super().__init__(htp1, entry)
@@ -553,6 +547,9 @@ class Htp1DialnormSelect(Htp1BaseSelect):
             raw = self._htp1.dialnorm
             if raw is None:
                 return None
+            if isinstance(raw, bool):
+                # Tolerate a value written as a JSON boolean by an earlier version.
+                raw = "on" if raw else "off"
             return self._RAW_TO_UI.get(str(raw))
         except Exception:
             return None

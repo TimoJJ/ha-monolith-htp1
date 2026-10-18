@@ -1,7 +1,9 @@
 {
   "config": {
     "abort": {
-      "already_configured": "Device is already configured"
+      "already_configured": "Device is already configured",
+      "reconfigure_successful": "Re-configuration was successful",
+      "wrong_device": "The device at this address is not the HTP-1 that was set up earlier"
     },
     "error": {
       "cannot_connect": "Failed to connect to device",
