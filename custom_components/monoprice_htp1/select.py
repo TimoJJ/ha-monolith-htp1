@@ -155,8 +155,8 @@ class Htp1UpmixSelect(Htp1BaseSelect):
     _attr_icon = "mdi:arrow-expand-up"
 
     _RAW_TO_UI: dict[str, str] = {
-        "off": "Direct",
-        "native": "Native",
+        "off": "No Upmix",
+        "native": "Auto",
         "dolby": "Dolby Surround",
         "dts": "DTS Neural:X",
         "auro": "Auro-3D",

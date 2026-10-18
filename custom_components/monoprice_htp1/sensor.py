@@ -17,8 +17,8 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 UPMIX_DISPLAY = {
-    "off": "Direct",
-    "native": "Native",
+    "off": "No Upmix",
+    "native": "Auto",
     "dolby": "Dolby Surround",
     "dts": "DTS Neural:X",
     "auro": "Auro-3D",

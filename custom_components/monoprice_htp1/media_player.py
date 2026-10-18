@@ -25,8 +25,8 @@ from .helpers import schedule_entity_update_threadsafe
 
 # Raw device values -> UI labels
 UPMIX_RAW_TO_UI = {
-    "off": "Direct",
-    "native": "Native",
+    "off": "No Upmix",
+    "native": "Auto",
     "dolby": "Dolby Surround",
     "dts": "DTS Neural:X",
     "auro": "Auro-3D",
