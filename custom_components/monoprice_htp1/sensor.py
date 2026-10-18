@@ -22,8 +22,8 @@ UPMIX_DISPLAY = {
     "dolby": "Dolby Surround",
     "dts": "DTS Neural:X",
     "auro": "Auro-3D",
-    "mono": "Mono",
-    "stereo": "Stereo",
+    "mono": "All Mono",
+    "stereo": "All Stereo",
 }
 
 LOUDNESS_CURVE_DISPLAY = {

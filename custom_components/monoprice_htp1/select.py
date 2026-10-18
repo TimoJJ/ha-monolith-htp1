@@ -160,8 +160,8 @@ class Htp1UpmixSelect(Htp1BaseSelect):
         "dolby": "Dolby Surround",
         "dts": "DTS Neural:X",
         "auro": "Auro-3D",
-        "mono": "Mono",
-        "stereo": "Stereo",
+        "mono": "All Mono",
+        "stereo": "All Stereo",
     }
 
     def __init__(self, htp1, entry: ConfigEntry) -> None:

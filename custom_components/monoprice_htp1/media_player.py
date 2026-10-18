@@ -30,8 +30,8 @@ UPMIX_RAW_TO_UI = {
     "dolby": "Dolby Surround",
     "dts": "DTS Neural:X",
     "auro": "Auro-3D",
-    "mono": "Mono",
-    "stereo": "Stereo",
+    "mono": "All Mono",
+    "stereo": "All Stereo",
 }
 # UI labels -> raw device values
 UPMIX_UI_TO_RAW = {v: k for k, v in UPMIX_RAW_TO_UI.items()}
