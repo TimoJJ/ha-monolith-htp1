@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN
+from .const import DOMAIN, ui_lock_signal
+from .helpers import schedule_entity_update_threadsafe
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,13 +20,19 @@ TRIGGER_NAMES = [
 ]
 
 
-class TriggerSwitch(SwitchEntity, RestoreEntity):
-    """HTP-1 trigger switch."""
+class TriggerSwitch(SwitchEntity):
+    """HTP-1 amp trigger output.
+
+    The state is the real output state the device publishes at
+    /triggers/N/on (firmware 2.2.0+). Without that path the switch is unavailable.
+    """
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, htp1, entry_id: str, index: int):
         self._htp1 = htp1
+        self._entry_id = entry_id
         self._index = index
 
         self._attr_unique_id = f"{entry_id}_trigger_{index + 1}"
@@ -37,66 +45,80 @@ class TriggerSwitch(SwitchEntity, RestoreEntity):
             name="HTP-1",
         )
 
+        self._unsubs: list[Callable[[], None]] = []
+
     async def async_added_to_hass(self):
-        self._unsubs = []
         await super().async_added_to_hass()
 
-        # Restore last known state across HA/integration restarts.
-        last_state = await self.async_get_last_state()
-        if last_state is not None:
-            await self._htp1.trigger.set_local_state(
-                self._index,
-                last_state.state == "on",
-                notify=False,
+        if self._index == 0 and self._htp1.connected and self._htp1.trigger_on(0) is None:
+            _LOGGER.warning(
+                "The HTP-1 does not report amp trigger states; "
+                "trigger switches need firmware 2.2.0 or newer"
             )
-            self.async_schedule_update_ha_state()
 
-        # Update trigger switch when manager notifies.
-        unsub = self._htp1.trigger.subscribe(
-            f"#trigger{self._index + 1}", self._handle_trigger_update
-        )
-        if callable(unsub):
-            self._unsubs.append(unsub)
-
-        # Listen to power state changes only once (avoid duplicates).
-        if self._index == 0:
-            unsub = self._htp1.subscribe("/powerIsOn", self._handle_power_update)
+        for subject in (f"/triggers/{self._index}/on", "/powerIsOn", "#connection"):
+            unsub = self._htp1.subscribe(subject, self._handle_update)
             if callable(unsub):
                 self._unsubs.append(unsub)
 
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry_id), self._handle_update
+        )
+
     async def async_will_remove_from_hass(self) -> None:
-        for unsub in getattr(self, "_unsubs", []):
-            if callable(unsub):
-                try:
-                    unsub()
-                except Exception:
-                    pass
+        for unsub in self._unsubs:
+            try:
+                unsub()
+            except Exception:
+                pass
+        self._unsubs = []
 
-    def _handle_trigger_update(self, value):
-        self.async_schedule_update_ha_state()
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            try:
+                unsub()
+            except Exception:
+                pass
 
-    def _handle_power_update(self, value):
-        power = bool(value)
-        try:
-            self._htp1.trigger.handle_power_state(power)
-        except Exception:
-            _LOGGER.debug("Failed to handle power update for triggers", exc_info=True)
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)
+
+    def _locked_by_standby(self) -> bool:
+        # The device ignores trigger switching in standby.
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            return pwr is False or pwr == 0
+        return False
 
     @property
     def available(self) -> bool:
-        return self._htp1.connected
+        if not self._htp1.connected:
+            return False
+        if self._htp1.trigger_on(self._index) is None:
+            return False
+        return not self._locked_by_standby()
 
     @property
-    def is_on(self) -> bool:
-        return bool(self._htp1.trigger.states[self._index])
+    def is_on(self) -> bool | None:
+        return self._htp1.trigger_on(self._index)
+
+    async def _set(self, value: bool) -> None:
+        # Enforce the standby lock even if called via service.
+        if self._locked_by_standby():
+            return
+
+        async with self._htp1:
+            self._htp1.set_trigger_on(self._index, value)
+            await self._htp1.commit()
+
+        # The device reports the real state back; re-read in case it refused.
+        schedule_entity_update_threadsafe(self)
 
     async def async_turn_on(self, **kwargs):
-        await self._htp1.trigger.set_trigger(self._index, True)
-        # TriggerManager notifies back; no extra state write needed.
+        await self._set(True)
 
     async def async_turn_off(self, **kwargs):
-        await self._htp1.trigger.set_trigger(self._index, False)
-        # TriggerManager notifies back; no extra state write needed.
+        await self._set(False)
 
 
 def build_trigger_switches(htp1, entry_id: str):

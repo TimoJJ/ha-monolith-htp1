@@ -7,7 +7,6 @@ from contextlib import suppress
 from json import dumps, loads
 from logging import getLogger
 from typing import Any
-from .trigger_manager import TriggerManager
 
 import aiodns
 import aiohttp
@@ -59,8 +58,6 @@ class Htp1:
         # If True, disable control entities (numbers/selects/buttons) when device is off/standby.
         # Sensors remain available regardless.
         self.lock_controls_when_off: bool = True
-
-        self.trigger = TriggerManager(self)
 
         self.reset()
 
@@ -528,6 +525,40 @@ class Htp1:
         if self._tx is None:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/powerIsOn"] = value
+
+    #
+    # AMP TRIGGERS (firmware 2.2.0+: /triggers/N/on, N = 0..3)
+    #
+
+    TRIGGER_COUNT = 4
+
+    def trigger_on(self, index: int) -> bool | None:
+        """Return the real output state of trigger `index` (0-3).
+
+        None when the device does not publish it (firmware older than 2.2.0)
+        or the state is not loaded.
+        """
+        path = f"/triggers/{index}/on"
+        if self._tx is not None and path in self._tx:
+            return self._tx[path]
+        if not self._state:
+            return None
+        triggers = self._state.get("triggers")
+        if not isinstance(triggers, dict):
+            return None
+        trigger = triggers.get(str(index))
+        if not isinstance(trigger, dict):
+            return None
+        value = trigger.get("on")
+        return None if value is None else bool(value)
+
+    def set_trigger_on(self, index: int, value: bool) -> None:
+        """Queue a trigger output change; the device reports the real state back."""
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        if not 0 <= index < self.TRIGGER_COUNT:
+            raise AioHtp1Exception(f"invalid trigger index: {index}")
+        self._tx[f"/triggers/{index}/on"] = bool(value)
 
 
     @property
