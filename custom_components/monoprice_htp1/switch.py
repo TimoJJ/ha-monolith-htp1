@@ -120,10 +120,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     from .trigger_switch import build_trigger_switches
     entities.extend(build_trigger_switches(htp1, entry.entry_id))
 
-    # Mix-out volume tracking toggles (switch platform only).
-    # from .mix_out_tracker import build_mix_out_tracking_switches
-    # entities.extend(build_mix_out_tracking_switches(htp1, entry.entry_id))
-
     # Request an immediate first update so entities don't sit at unknown.
     async_add_entities(entities, True)
 
