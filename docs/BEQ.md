@@ -1,14 +1,14 @@
 ## Summary
 Adds support for loading [BEQ (Bass EQ)](https://beqcatalogue.readthedocs.io/) correction filters directly from Home Assistant. BEQ filters apply bass correction profiles to the HTP-1's PEQ slots for specific movies and TV shows, compensating for rolled-off low-frequency content in many modern soundtracks.
-Implementation matches the HTP-1 web UI (`BassEq.vue`) behavior — same slot range, value formatting, and `changemso` payload structure. Verified working on a real HTP-1 with Dirac ART and 3 subwoofers.
-Inspired by the BEQ catalogue support added in [v2.0.0 of the Unfolded Circle integration](https://github.com/mase1981/uc-intg-monoprice-htp1/releases/tag/2.0.0) by [@mase1981](https://github.com/mase1981). Thanks for the original idea and implementation reference — the catalogue search approach and PEQ slot management logic were adapted from that work.
+Implementation matches the HTP-1 web UI (`BassEq.vue`) behavior â€” same slot range, value formatting, and `changemso` payload structure. Verified working on a real HTP-1 with Dirac ART and 3 subwoofers.
+Inspired by the BEQ catalogue support added in [v2.0.0 of the Unfolded Circle integration](https://github.com/mase1981/uc-intg-monoprice-htp1/releases/tag/2.0.0) by [@mase1981](https://github.com/mase1981). Thanks for the original idea and implementation reference â€” the catalogue search approach and PEQ slot management logic were adapted from that work.
 ## New features
-- **`monoprice_htp1.load_beq_filter` service** — Search the BEQ catalogue and load a filter by:
+- **`monoprice_htp1.load_beq_filter` service** â€” Search the BEQ catalogue and load a filter by:
   - Movie title (case-insensitive substring match)
   - TMDB ID (supports numeric IDs, string IDs, and full themoviedb.org URLs)
   - Optional year and audio codec filters to narrow results when multiple matches exist
-- **`monoprice_htp1.clear_beq_filter` service** — Remove the currently loaded BEQ filter
-- **BEQ Filter sensor** — Shows the name of the currently active BEQ filter (or "None")
+- **`monoprice_htp1.clear_beq_filter` service** â€” Remove the currently loaded BEQ filter
+- **BEQ Filter sensor** â€” Shows the name of the currently active BEQ filter (or "None")
 ## Usage examples
 ### Basic service calls
 ```yaml
