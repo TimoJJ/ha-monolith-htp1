@@ -13,13 +13,6 @@ from .helpers import schedule_entity_update_threadsafe
 
 _LOGGER = logging.getLogger(__name__)
 
-# Optional AVCUI select support
-try:
-    from .avcui_select import build_avcui_select_entities  # type: ignore
-except Exception as err:
-    build_avcui_select_entities = None  # type: ignore
-    _LOGGER.debug("AVCUI select disabled (avcui_select.py): %s", err)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -37,14 +30,6 @@ async def async_setup_entry(
         Htp1DialnormSelect(htp1, entry),
         Htp1ShakerPresetSelect(htp1, entry),
     ]
-
-
-    # Add AVCUI selects only if module import succeeded
-    if build_avcui_select_entities is not None:
-        try:
-            entities += build_avcui_select_entities(htp1, entry.entry_id)
-        except Exception:
-            _LOGGER.error("Failed to build AVCUI select entities", exc_info=True)
 
     # Consistent behavior with other platforms: request an immediate first update
     async_add_entities(entities, True)
