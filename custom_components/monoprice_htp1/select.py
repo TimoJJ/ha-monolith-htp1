@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -10,8 +8,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, ui_lock_signal
 from .helpers import schedule_entity_update_threadsafe
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
