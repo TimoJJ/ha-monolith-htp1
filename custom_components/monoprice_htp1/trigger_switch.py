@@ -4,10 +4,10 @@ import logging
 from typing import Callable
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, ui_lock_signal
+from .const import ui_lock_signal
+from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,12 +38,7 @@ class TriggerSwitch(SwitchEntity):
         self._attr_unique_id = f"{entry_id}_trigger_{index + 1}"
         self._attr_name = TRIGGER_NAMES[index]
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer="Monoprice",
-            model="HTP-1",
-            name="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry_id)
 
         self._unsubs: list[Callable[[], None]] = []
 

@@ -14,13 +14,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from . import beq
 from .aiohtp1 import Htp1
 from .const import DOMAIN, LOGGER, ui_lock_signal
+from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
 # Raw device values -> UI labels
@@ -87,12 +87,7 @@ class Htp1MediaPlayer(MediaPlayerEntity):
 
         self._attr_unique_id = f"{entry_id}_media_player"
         self._attr_name = "HTP-1"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer="Monoprice",
-            model="HTP-1",
-            name="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry_id)
 
         self._attr_volume_step: float | None = None
         self._unsubs: list[object] = []

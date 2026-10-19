@@ -5,10 +5,10 @@ from typing import Any, Callable
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, ui_lock_signal
+from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
 _LOGGER = logging.getLogger(__name__)
@@ -141,12 +141,7 @@ class Htp1UiLockSwitch(SwitchEntity, RestoreEntity):
         self._attr_unique_id = f"{entry_id}_ui_lock_controls_when_off"
         self._attr_name = "Disable controls in standby"
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer="Monoprice",
-            model="HTP-1",
-            name="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry_id)
 
         self._unsubs: list[Callable[[], None]] = []
 
@@ -229,12 +224,7 @@ class Htp1Switch(SwitchEntity):
         self._attr_icon = icon
         self._attr_entity_registry_enabled_default = entity_registry_enabled_default
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer="Monoprice",
-            model="HTP-1",
-            name="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry_id)
 
         self._unsubs: list[Callable[[], None]] = []
 

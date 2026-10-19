@@ -4,10 +4,10 @@ import logging
 from typing import Any, Callable
 
 from homeassistant.components.number import NumberEntity, NumberMode
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, ui_lock_signal
+from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
 _LOGGER = logging.getLogger(__name__)
@@ -451,12 +451,7 @@ class Htp1Number(NumberEntity):
 
         self._attr_entity_registry_enabled_default = entity_registry_enabled_default
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer="Monoprice",
-            model="HTP-1",
-            name="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry_id)
 
     def _resolve_limit(self, v):
         try:

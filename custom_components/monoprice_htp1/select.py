@@ -3,10 +3,10 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, ui_lock_signal
+from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
 
@@ -40,12 +40,7 @@ class Htp1BaseSelect(SelectEntity):
     def __init__(self, htp1, entry: ConfigEntry) -> None:
         self._htp1 = htp1
         self._entry = entry
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Monoprice HTP-1",
-            manufacturer="Monoprice",
-            model="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry.entry_id)
 
     @property
     def available(self) -> bool:

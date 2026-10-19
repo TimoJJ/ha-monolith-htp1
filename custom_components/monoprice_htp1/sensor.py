@@ -9,10 +9,10 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import STATE_OFF, STATE_ON
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN
+from .entity import htp1_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -692,12 +692,7 @@ class Htp1Sensor(SensorEntity):
         else:
             self._attr_entity_category = entity_category
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            manufacturer="Monoprice",
-            model="HTP-1",
-            name="HTP-1",
-        )
+        self._attr_device_info = htp1_device_info(entry_id)
 
     @property
     def native_value(self):
