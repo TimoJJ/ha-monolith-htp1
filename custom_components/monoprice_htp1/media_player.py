@@ -86,7 +86,8 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         self._volume_cache: int | float | None = None
 
         self._attr_unique_id = f"{entry_id}_media_player"
-        self._attr_name = "HTP-1"
+        # Main entity of the device: it takes the device name ("HTP-1") alone.
+        self._attr_name = None
         self._attr_device_info = htp1_device_info(entry_id)
 
         self._attr_volume_step: float | None = None
