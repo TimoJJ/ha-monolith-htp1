@@ -30,6 +30,10 @@ Input your HTP-1 IP-address and after about 10-15 seconds sensors should appear 
 
 **Manual:** Delete the old `monoprice_htp1` directory from `custom components`, copy the new `monoprice_htp1` folder from the updated release .zip into `custom_components`, and restart Home Assistant.
 
+## Bass EQ (BEQ)
+
+The integration can load [BEQ](https://beqcatalogue.readthedocs.io/) bass correction filters onto the HTP-1 with the `monoprice_htp1.load_beq_filter` and `monoprice_htp1.clear_beq_filter` services. See [docs/BEQ.md](docs/BEQ.md) for usage and automation examples.
+
 ## Screens
 
 
