@@ -1,37 +1,73 @@
-## Summary
-Adds support for loading [BEQ (Bass EQ)](https://beqcatalogue.readthedocs.io/) correction filters directly from Home Assistant. BEQ filters apply bass correction profiles to the HTP-1's PEQ slots for specific movies and TV shows, compensating for rolled-off low-frequency content in many modern soundtracks.
-Implementation matches the HTP-1 web UI (`BassEq.vue`) behavior — same slot range, value formatting, and `changemso` payload structure. Verified working on a real HTP-1 with Dirac ART and 3 subwoofers.
-Inspired by the BEQ catalogue support added in [v2.0.0 of the Unfolded Circle integration](https://github.com/mase1981/uc-intg-monoprice-htp1/releases/tag/2.0.0) by [@mase1981](https://github.com/mase1981). Thanks for the original idea and implementation reference — the catalogue search approach and PEQ slot management logic were adapted from that work.
-## New features
-- **`monoprice_htp1.load_beq_filter` service** — Search the BEQ catalogue and load a filter by:
-  - Movie title (case-insensitive substring match)
-  - TMDB ID (supports numeric IDs, string IDs, and full themoviedb.org URLs)
-  - Optional year and audio codec filters to narrow results when multiple matches exist
-- **`monoprice_htp1.clear_beq_filter` service** — Remove the currently loaded BEQ filter
-- **BEQ Filter sensor** — Shows the name of the currently active BEQ filter (or "None")
-## Usage examples
-### Basic service calls
+# Bass EQ (BEQ) filters
+
+Load [BEQ (Bass EQ)](https://beqcatalogue.readthedocs.io/) correction filters onto the HTP-1 from Home Assistant. A BEQ filter is a set of bass corrections made for a specific movie or TV show, compensating for the rolled-off low frequencies in many modern soundtracks. The integration looks the title up in the BEQ catalogue and writes the filters to the HTP-1's PEQ slots. You can load a filter by hand or automatically when playback starts.
+
+## Requirements
+
+- The HTP-1 is connected, so its media player entity is available.
+- Home Assistant can reach `beqcatalogue.readthedocs.io`.
+- Free PEQ slots on the subwoofer channels (see [How loading works](#how-loading-works)).
+
+## Services
+
+Both services target the HTP-1 media player entity.
+
+### `monoprice_htp1.load_beq_filter`
+
+Searches the BEQ catalogue and loads the best matching filter. Give either `title` or `tmdb_id`.
+
+| Field | Description |
+|---|---|
+| `title` | Movie title. Case-insensitive substring match. |
+| `tmdb_id` | The Movie Database ID: a number, a string, or a full themoviedb.org URL. If both `tmdb_id` and `title` are given, `tmdb_id` is used and `title` and `year` are ignored. |
+| `year` | Release year. Narrows a title search when several entries match. |
+| `codec` | Audio codec, for example `Atmos`, `DTS:X` or `TrueHD`. Case-insensitive substring match. Works with both `title` and `tmdb_id`. |
+
+If several catalogue entries match, the one with the most filters is used.
+
+### `monoprice_htp1.clear_beq_filter`
+
+Removes the currently loaded BEQ filter.
+
+## Sensor
+
+The **BEQ Filter** sensor shows the name of the loaded BEQ filter, or `None` when no filter is loaded.
+
+## Examples
+
+Load by movie title:
+
 ```yaml
-# Load by movie title
 service: monoprice_htp1.load_beq_filter
 target:
   entity_id: media_player.htp_1
 data:
   title: "The Matrix"
   codec: "Atmos"
-# Load by TMDB ID
+```
+
+Load by TMDB ID:
+
+```yaml
 service: monoprice_htp1.load_beq_filter
 target:
   entity_id: media_player.htp_1
 data:
   tmdb_id: "603"
-# Clear current filter
+```
+
+Clear the current filter:
+
+```yaml
 service: monoprice_htp1.clear_beq_filter
 target:
   entity_id: media_player.htp_1
 ```
-### Auto-load BEQ on movie playback
-Media player integrations like **Zidoo** and **Kodi** expose the TMDB ID of the currently playing movie in their entity attributes. You can use this to automatically load the correct BEQ filter whenever a movie starts playing:
+
+### Load BEQ automatically when a movie starts
+
+Media players such as **Zidoo** and **Kodi** can expose the TMDB ID of the movie that is playing in their entity attributes. This automation loads the matching BEQ filter when playback starts and clears it when playback stops:
+
 ```yaml
 automation:
   - alias: "Auto-load BEQ filter on movie playback"
@@ -60,14 +96,31 @@ automation:
         target:
           entity_id: media_player.htp_1
 ```
-A similar automation works with Kodi, where the TMDB ID can be sourced from attributes exposed by the Kodi integration or a custom sensor via Kodi's JSON-RPC API.
-## Technical details
-- Filters written to PEQ slots on all active sub channels, finding empty slots by `gaindB === 0` (matching web UI logic)
-- Uses the `underlying` catalogue field for `beqActive` so the web UI can resolve the display name
-- Clear scans all 16 PEQ slots across sub1-sub5 (matching web UI `clearAllExistingBeqFilters`)
-- Enables PEQ (`peqsw = true`) after loading (matching web UI `setGlobalPEQOn`)
-- Sends integer values for whole numbers (e.g. `10` not `10.0`) matching web UI `convertFloat`/`JSON.stringify` behavior
-- All clear + load ops sent in a single `changemso` batch
-- `msoupdate` handler now supports `remove` operations (required for clearing BEQ state)
-- BEQ catalogue fetched from `beqcatalogue.readthedocs.io` and cached in memory for 1 hour using HA's shared aiohttp session
-- Services registered as entity services on the media player platform with full HA developer tools UI support
+
+A similar automation works with Kodi. The TMDB ID can come from attributes exposed by the Kodi integration or from a custom sensor that reads it through Kodi's JSON-RPC API.
+
+## How loading works
+
+- The filters are written to the PEQ slots of the subwoofer channels. If the PEQ location is **pre**, only the first subwoofer channel (shown as LFE) is used. If it is **post**, every subwoofer channel that is present is used.
+- Any BEQ filter that was loaded earlier is cleared first.
+- Slots that hold your own filters are skipped. A slot counts as free when its gain is 0 and its filter type is not all-pass, low-pass or high-pass.
+- The PEQ has 16 slots. If the catalogue entry has more filters than there are free slots, the extra filters are skipped and a warning is written to the Home Assistant log.
+- The PEQ is switched on after the filter is loaded.
+- Clearing and loading are sent to the HTP-1 as one change.
+- The filter name is stored so that the HTP-1 WebUI can show it.
+- The BEQ catalogue is downloaded once and cached in memory for one hour.
+
+## Errors
+
+The services fail with an error in Home Assistant when:
+
+- neither `title` nor `tmdb_id` is given,
+- the HTP-1 is not connected,
+- the catalogue cannot be downloaded,
+- the TMDB ID cannot be read,
+- no catalogue entry matches, or the matching entry has no filters,
+- the filter cannot be written to the HTP-1.
+
+## Credits
+
+The BEQ catalogue support was inspired by [version 2.0.0 of the Unfolded Circle integration](https://github.com/mase1981/uc-intg-monoprice-htp1/releases/tag/2.0.0) by [@mase1981](https://github.com/mase1981). The catalogue search and the PEQ slot handling were adapted from that work.
