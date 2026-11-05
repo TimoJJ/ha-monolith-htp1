@@ -477,6 +477,41 @@ class Htp1:
             return None
         return slot.get("filterType") or "Dirac Live"
 
+    @property
+    def cal_slot_count(self) -> int:
+        """Number of slots the unit offers (/cal/num_dirac_slots: 6, or 3 on some units)."""
+        cal = (self._state or {}).get("cal")
+        slots = cal.get("slots") if isinstance(cal, dict) else None
+        if not isinstance(slots, list):
+            return 0
+        count = cal.get("num_dirac_slots")
+        if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+            count = self.CAL_SLOT_COUNT
+        return min(count, len(slots), self.CAL_SLOT_COUNT)
+
+    def cal_slot_info(self, index: int) -> tuple[str, str | None]:
+        """Name and Dirac filter type (None when empty) of calibration slot `index`."""
+        slots = ((self._state or {}).get("cal") or {}).get("slots") or []
+        slot = slots[index] if 0 <= index < len(slots) and isinstance(slots[index], dict) else {}
+        name = str(slot.get("name") or "").strip() or f"Slot {index + 1}"
+        filter_type = (slot.get("filterType") or "Dirac Live") if slot.get("valid") else None
+        return name, filter_type
+
+    @property
+    def dirac_busy(self) -> bool:
+        """True while a slot switch or a filter repair runs; the unit refuses slot changes then."""
+        cal = (self._state or {}).get("cal")
+        if not isinstance(cal, dict):
+            return False
+        switch = cal.get("diracSwitch")
+        switch = switch if isinstance(switch, dict) else {}
+        return bool(
+            switch.get("locked")
+            or switch.get("state") in ("requested", "running")
+            or cal.get("diracRepairControlsLocked")
+            or cal.get("diracRepairState") == "running"
+        )
+
 
     @property
     def cal_current_dirac_slot(self):

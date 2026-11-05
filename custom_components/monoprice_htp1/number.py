@@ -124,6 +124,8 @@ NUMBER_DEFINITIONS = [
         "mode": "box",
         "min": 1,
         "max": 6,
+        # Hidden for new installs: the Calibration Slot select sends one command per choice.
+        "entity_registry_enabled_default": False,
         "step": 1,
         "get_fn": lambda h: h.cal_current_dirac_slot,
         "set_fn": lambda h, v: setattr(h, "cal_current_dirac_slot", int(v)),

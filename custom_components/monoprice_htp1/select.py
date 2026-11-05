@@ -3,6 +3,7 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .aiohtp1 import Htp1
@@ -22,6 +23,7 @@ async def async_setup_entry(
         Htp1InputSelect(htp1, entry),
         Htp1UpmixSelect(htp1, entry),
         Htp1LoudnessCurveSelect(htp1, entry),
+        Htp1CalibrationSlotSelect(htp1, entry),
         Htp1DiracActiveSelect(htp1, entry),
         Htp1NightModeSelect(htp1, entry),
         Htp1DialnormSelect(htp1, entry),
@@ -662,6 +664,90 @@ class Htp1ShakerPresetSelect(Htp1BaseSelect):
         unsub = self._htp1.subscribe("#connection", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
+
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry.entry_id), self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            unsub()
+
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)
+
+
+class Htp1CalibrationSlotSelect(Htp1BaseSelect):
+    """Calibration slot by name, one command per choice.
+
+    The number entity's arrows send every step, and the unit refuses a slot
+    change while the previous switch is still running.
+    """
+
+    _attr_name = "Calibration Slot"
+    _attr_icon = "mdi:playlist-check"
+
+    def __init__(self, htp1, entry: ConfigEntry) -> None:
+        super().__init__(htp1, entry)
+        self._attr_unique_id = f"{entry.entry_id}_cal_slot_select"
+
+    def _label(self, index: int) -> str:
+        name, filter_type = self._htp1.cal_slot_info(index)
+        label = f"{index + 1}: {name}"
+        if filter_type:
+            label += f" ({DIRAC_FILTER_SHORT.get(filter_type, filter_type)})"
+        return label
+
+    @property
+    def options(self) -> list[str]:
+        return [self._label(i) for i in range(self._htp1.cal_slot_count)]
+
+    @property
+    def current_option(self) -> str | None:
+        index = self._htp1.cal_current_dirac_slot
+        if index is None or not 0 <= index < self._htp1.cal_slot_count:
+            return None
+        return self._label(index)
+
+    async def async_select_option(self, option: str) -> None:
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return
+
+        options = self.options
+        if option not in options:
+            raise HomeAssistantError(f"Unknown calibration slot: {option}")
+        index = options.index(option)
+        if index == self._htp1.cal_current_dirac_slot:
+            return
+        if self._htp1.dirac_busy:
+            raise HomeAssistantError(
+                "The HTP-1 is still changing the Dirac slot. Try again when it has finished."
+            )
+
+        async with self._htp1:
+            self._htp1.cal_current_dirac_slot = index
+            await self._htp1.commit()
+
+        schedule_entity_update_threadsafe(self)
+
+    async def async_added_to_hass(self):
+        self._unsubs = []
+
+        for path in (*Htp1.CAL_SLOT_PATHS, "/cal/num_dirac_slots", "/cal/diracSwitch",
+                     "/powerIsOn", "#connection"):
+            unsub = self._htp1.subscribe(path, self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
 
         self._unsub_ui_lock = async_dispatcher_connect(
             self.hass, ui_lock_signal(self._entry.entry_id), self._handle_update
