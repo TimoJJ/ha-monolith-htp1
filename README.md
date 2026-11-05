@@ -12,15 +12,13 @@ HTP-1](https://www.monoprice.com/product?p_id=37887) home theater processor.
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=TimoJJ&repository=ha-monolith-htp1&category=integration)
 
 1. Make sure [HACS](https://hacs.xyz/) is installed in your Home Assistant instance.
-2. In Home Assistant, go to **HACS → Integrations → ⋮ → Custom repositories**.
-3. Add `https://github.com/TimoJJ/ha-monolith-htp1` as the repository URL, with category **Integration**.
-4. Find "Monoprice HTP-1" in HACS and click **Download**.
-5. Restart Home Assistant.
-6. Go to **Settings → Devices & Services → Add Integration**, search for "Monoprice", and follow the config flow, entering your HTP-1's IP address.
+2. In Home Assistant, open **HACS**, search for "Monoprice HTP-1" and click **Download**.
+3. Restart Home Assistant.
+4. Go to **Settings → Devices & Services → Add Integration**, search for "Monoprice", and follow the config flow, entering your HTP-1's IP address.
 
 ### Manual installation (alternative)
 
-Copy the `monoprice_htp1` directory from a downloaded release .zip into the `custom_components` directory under your Home Assistant configuration directory, and restart Home Assistant. Then follow step 6 above to add the integration via the UI.
+Copy the `monoprice_htp1` directory from a downloaded release .zip into the `custom_components` directory under your Home Assistant configuration directory, and restart Home Assistant. Then follow step 4 above to add the integration via the UI.
 
 Input your HTP-1 IP-address and after about 10-15 seconds sensors should appear and update.
 
