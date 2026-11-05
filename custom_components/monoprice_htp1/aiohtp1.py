@@ -429,8 +429,15 @@ class Htp1:
             return None
         return self._state.get("powerOnVol")
 
-    @property
-    def cal_current_slot_name(self):
+    # Paths whose changes can alter the selected calibration slot or its contents.
+    CAL_SLOT_PATHS = ("/cal/currentdiracslot", "/cal/slots") + tuple(
+        f"/cal/slots/{i}{sub}"
+        for i in range(CAL_SLOT_COUNT)
+        for sub in ("", "/name", "/valid", "/filterType")
+    )
+
+    def _current_cal_slot(self) -> dict | None:
+        """Return the selected calibration slot (/cal/slots/<currentdiracslot>)."""
         if not self._state:
             return None
 
@@ -449,11 +456,26 @@ class Htp1:
             return None
 
         slot = slots[idx]
-        if not isinstance(slot, dict):
-            return None
+        return slot if isinstance(slot, dict) else None
 
+    @property
+    def cal_current_slot_name(self):
+        slot = self._current_cal_slot()
+        if slot is None:
+            return None
         name = slot.get("name")
         return name or None
+
+    @property
+    def cal_current_filter_type(self) -> str | None:
+        """Dirac filter type of the selected slot as the device stores it
+        ("Dirac Live", "Dirac Live Bass Management", "Dirac Live Bass Control",
+        "Dirac Active Room Treatment"), or None when the slot holds no filter.
+        A valid slot without a type counts as "Dirac Live", as in the WebUI."""
+        slot = self._current_cal_slot()
+        if slot is None or not slot.get("valid"):
+            return None
+        return slot.get("filterType") or "Dirac Live"
 
 
     @property

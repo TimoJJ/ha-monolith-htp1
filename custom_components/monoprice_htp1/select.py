@@ -5,7 +5,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, ui_lock_signal
+from .aiohtp1 import Htp1
+from .const import DIRAC_FILTER_SHORT, DOMAIN, ui_lock_signal
 from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
@@ -352,6 +353,12 @@ class Htp1DiracActiveSelect(Htp1BaseSelect):
         return list(self._RAW_TO_UI.values())
 
     @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        # Filter type of the selected calibration slot, short as in the WebUI.
+        raw = self._htp1.cal_current_filter_type
+        return {"filter_type": DIRAC_FILTER_SHORT.get(raw, raw) if raw else None}
+
+    @property
     def current_option(self) -> str | None:
         try:
             raw = self._htp1.dirac_active
@@ -383,6 +390,11 @@ class Htp1DiracActiveSelect(Htp1BaseSelect):
         unsub = self._htp1.subscribe("/cal/diracactive", self._handle_update)
         if callable(unsub):
             self._unsubs.append(unsub)
+
+        for path in Htp1.CAL_SLOT_PATHS:
+            unsub = self._htp1.subscribe(path, self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
 
         unsub = self._htp1.subscribe("/powerIsOn", self._handle_update)
         if callable(unsub):

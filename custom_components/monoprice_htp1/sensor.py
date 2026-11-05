@@ -11,7 +11,8 @@ from homeassistant.components.sensor import (
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.helpers.entity import EntityCategory
 
-from .const import DOMAIN
+from .aiohtp1 import Htp1
+from .const import DIRAC_FILTER_NAMES, DOMAIN
 from .entity import htp1_device_info
 
 _LOGGER = logging.getLogger(__name__)
@@ -579,8 +580,21 @@ SENSOR_DEFINITIONS = [
         "key": "cal_current_slot_name",
         "name": "Calibration Slot",
         "path": "/cal/currentdiracslot",
+        "extra_paths": Htp1.CAL_SLOT_PATHS,
         "value_fn": lambda htp1: htp1.cal_current_slot_name,
         "icon": "mdi:playlist-check",
+    },
+    {
+        "key": "dirac_filter_type",
+        "name": "Dirac Filter Type",
+        "path": "/cal/currentdiracslot",
+        "extra_paths": Htp1.CAL_SLOT_PATHS,
+        "value_fn": lambda htp1: (
+            DIRAC_FILTER_NAMES.get(htp1.cal_current_filter_type, htp1.cal_current_filter_type)
+            if htp1.cal_current_filter_type
+            else "None"
+        ),
+        "icon": "mdi:alpha-d-box",
     },
     {
         "key": "peq_status",
@@ -667,9 +681,11 @@ class Htp1Sensor(SensorEntity):
         suggested_display_precision: int | None = None,
         entity_registry_enabled_default: bool = True,
         entity_category: EntityCategory | str | None = None,
+        extra_paths: tuple[str, ...] = (),
     ):
         self._htp1 = htp1
         self._path = path
+        self._paths = tuple(dict.fromkeys((path, *extra_paths)))
         self._value_fn = value_fn
 
         self._attr_unique_id = f"{entry_id}_{key}"
@@ -705,15 +721,16 @@ class Htp1Sensor(SensorEntity):
     async def async_added_to_hass(self):
         # Subscribe to path updates from the device.
         # Callback is sync to avoid accidental coroutine creation if subscribe() calls it synchronously.
-        self._unsub = self._htp1.subscribe(self._path, self._handle_update)
+        self._unsubs = [self._htp1.subscribe(p, self._handle_update) for p in self._paths]
 
     async def async_will_remove_from_hass(self) -> None:
-        unsub = getattr(self, "_unsub", None)
-        if callable(unsub):
-            try:
-                unsub()
-            except Exception:
-                pass
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+        self._unsubs = []
 
     def _handle_update(self, value):
         # Schedule a state update on the HA loop.
