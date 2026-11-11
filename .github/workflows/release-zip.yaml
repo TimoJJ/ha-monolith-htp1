@@ -25,14 +25,21 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
+      # HACS and the Marketplace unzip this file straight into custom_components/monoprice_htp1
+      # (hacs.json: zip_release), so the integration files sit at the root of the zip.
       - name: "Build monoprice_htp1.zip"
         run: |
-          mkdir -p build/monoprice_htp1
-          cp -r custom_components/monoprice_htp1/. build/monoprice_htp1/
-          cd build
-          zip -r ../monoprice_htp1.zip monoprice_htp1
+          cd custom_components/monoprice_htp1
+          zip -r "$GITHUB_WORKSPACE/monoprice_htp1.zip" . -x "__pycache__/*" "*.pyc"
 
+      # A release created with the zip already attached keeps it; a manual run replaces it.
       - name: "Upload zip to release"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ steps.tag.outputs.tag }}" monoprice_htp1.zip --clobber --repo ${{ github.repository }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if [ "${{ github.event_name }}" = "release" ] && gh release view "$tag" --repo ${{ github.repository }} --json assets -q '.assets[].name' | grep -qx "monoprice_htp1.zip"; then
+            echo "monoprice_htp1.zip is already attached to $tag"
+            exit 0
+          fi
+          gh release upload "$tag" monoprice_htp1.zip --clobber --repo ${{ github.repository }}
