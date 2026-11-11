@@ -4,6 +4,7 @@ import logging
 from typing import Any, Callable
 
 from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN, ui_lock_signal
@@ -115,20 +116,6 @@ NUMBER_DEFINITIONS = [
         "step": 1,
         "get_fn": lambda h: h.display_brightness,
         "set_fn": lambda h, v: setattr(h, "display_brightness", v),
-    },
-    {
-        "key": "cal_current_dirac_slot",
-        "name": "Calibration Slot",
-        "path": "/cal/currentdiracslot",
-        "icon": "mdi:playlist-check",
-        "mode": "box",
-        "min": 1,
-        "max": 6,
-        # Hidden for new installs: the Calibration Slot select sends one command per choice.
-        "entity_registry_enabled_default": False,
-        "step": 1,
-        "get_fn": lambda h: h.cal_current_dirac_slot,
-        "set_fn": lambda h, v: setattr(h, "cal_current_dirac_slot", int(v)),
     },
     {
         "key": "channeltrim_right",
@@ -398,8 +385,21 @@ def build_htp1_numbers(htp1, entry_id: str):
 # -------------------------------------------------------------
 # Platform setup
 # -------------------------------------------------------------
+# Unique id keys of number entities that no longer exist.
+REMOVED_NUMBER_KEYS = (
+    "cal_current_dirac_slot",  # replaced by the Calibration Slot select
+)
+
+
 async def async_setup_entry(hass, entry, async_add_entities):
     htp1 = hass.data[DOMAIN][entry.entry_id]
+
+    # Drop the registry entries of removed entities so they do not linger as unavailable.
+    registry = er.async_get(hass)
+    for key in REMOVED_NUMBER_KEYS:
+        entity_id = registry.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_{key}")
+        if entity_id:
+            registry.async_remove(entity_id)
 
     entities = []
     entities.extend(build_htp1_numbers(htp1, entry.entry_id))
@@ -447,9 +447,6 @@ class Htp1Number(NumberEntity):
 
         if mode is not None:
             self._attr_mode = mode
-        elif key == "cal_current_dirac_slot":
-            # Backward compatibility: if definition doesn't specify mode, keep BOX for Dirac slot.
-            self._attr_mode = NumberMode.BOX
 
         self._attr_entity_registry_enabled_default = entity_registry_enabled_default
 
@@ -532,10 +529,6 @@ class Htp1Number(NumberEntity):
             if v is None:
                 return None
 
-            # UI uses 1..6, device uses 0..5.
-            if self._key == "cal_current_dirac_slot":
-                return int(v) + 1
-
             return v
         except Exception:
             _LOGGER.debug(
@@ -548,10 +541,6 @@ class Htp1Number(NumberEntity):
 
     async def async_set_native_value(self, value):
         async with self._htp1:
-            # UI uses 1..6, device expects 0..5.
-            if self._key == "cal_current_dirac_slot":
-                value = int(value) - 1
-
             # Lock volume when device is off/sleep.
             if self._key == "volume":
                 pwr = getattr(self._htp1, "power", None)
