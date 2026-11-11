@@ -1,4 +1,6 @@
 {
   "name": "Monoprice HTP-1",
-  "render_readme": true
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "monoprice_htp1.zip"
 }

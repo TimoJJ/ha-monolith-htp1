@@ -7,7 +7,13 @@ HTP-1](https://www.monoprice.com/product?p_id=37887) home theater processor.
 
 ## Installation
 
-### HACS (recommended)
+### Marketplace (Home Assistant 2026.11 or later)
+
+1. In Home Assistant, go to **Settings → Marketplace**. The first time, read the notice and accept it.
+2. Search for "Monoprice HTP-1" and select **Install**.
+3. Follow the setup flow and enter your HTP-1's IP address.
+
+### HACS (Home Assistant 2026.10 or earlier)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=TimoJJ&repository=ha-monolith-htp1&category=integration)
 
@@ -18,15 +24,18 @@ HTP-1](https://www.monoprice.com/product?p_id=37887) home theater processor.
 
 ### Manual installation (alternative)
 
-Copy the `monoprice_htp1` directory from a downloaded release .zip into the `custom_components` directory under your Home Assistant configuration directory, and restart Home Assistant. Then follow step 4 above to add the integration via the UI.
+1. Download `monoprice_htp1.zip` from the [latest release](https://github.com/TimoJJ/ha-monolith-htp1/releases/latest).
+2. Create the folder `custom_components/monoprice_htp1` under your Home Assistant configuration directory and unzip the file into it.
+3. Restart Home Assistant.
+4. Go to **Settings → Devices & Services → Add Integration**, search for "Monoprice", and enter your HTP-1's IP address.
 
-Input your HTP-1 IP-address and after about 10-15 seconds sensors should appear and update.
+After the integration is added, the entities appear and update in about 10-15 seconds.
 
 ## Updating
 
-**Via HACS:** HACS will show an update notification when a new version is released; click **Update**, then restart Home Assistant.
+**Via Marketplace or HACS:** an update notification is shown when a new version is released. Install the update, then restart Home Assistant.
 
-**Manual:** Delete the old `monoprice_htp1` directory from `custom_components`, copy the new `monoprice_htp1` folder from the updated release .zip into `custom_components`, and restart Home Assistant.
+**Manual:** Delete the contents of `custom_components/monoprice_htp1`, unzip the new `monoprice_htp1.zip` into it, and restart Home Assistant.
 
 ## Bass EQ (BEQ)
 
