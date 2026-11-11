@@ -711,6 +711,10 @@ class Htp1Sensor(SensorEntity):
         self._attr_device_info = htp1_device_info(entry_id)
 
     @property
+    def available(self) -> bool:
+        return self._htp1.connected
+
+    @property
     def native_value(self):
         try:
             return self._value_fn(self._htp1)
@@ -721,7 +725,10 @@ class Htp1Sensor(SensorEntity):
     async def async_added_to_hass(self):
         # Subscribe to path updates from the device.
         # Callback is sync to avoid accidental coroutine creation if subscribe() calls it synchronously.
-        self._unsubs = [self._htp1.subscribe(p, self._handle_update) for p in self._paths]
+        # "#connection": values can differ after a reconnect, and are gone while disconnected.
+        self._unsubs = [
+            self._htp1.subscribe(p, self._handle_update) for p in (*self._paths, "#connection")
+        ]
 
     async def async_will_remove_from_hass(self) -> None:
         for unsub in getattr(self, "_unsubs", []):
@@ -732,6 +739,6 @@ class Htp1Sensor(SensorEntity):
                     pass
         self._unsubs = []
 
-    def _handle_update(self, value):
+    def _handle_update(self, value=None):
         # Schedule a state update on the HA loop.
         self.async_schedule_update_ha_state()

@@ -52,6 +52,8 @@ class Htp1:
         self._state: dict[str, Any] | None = None
         self._state_ready = asyncio.Event()
         self._tx: dict[str, Any] | None = None
+        # One transaction at a time; concurrent writers wait instead of failing.
+        self._tx_lock = asyncio.Lock()
 
         self._trying_to_connect = False
         self._ha_stopping = False
@@ -352,13 +354,13 @@ class Htp1:
     #
 
     async def __aenter__(self):
-        if self._tx is not None:
-            raise AioHtp1Exception("tx already active")
+        await self._tx_lock.acquire()
         self._tx = {}
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         self._tx = None
+        self._tx_lock.release()
 
 
     async def commit(self):
