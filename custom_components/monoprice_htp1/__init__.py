@@ -52,6 +52,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    htp1 = hass.data[DOMAIN].pop(entry.entry_id)
-    await htp1.stop()
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    # Unload the entities first; keep the connection if that fails.
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        htp1 = hass.data[DOMAIN].pop(entry.entry_id)
+        await htp1.stop()
+    return unload_ok

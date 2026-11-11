@@ -36,6 +36,7 @@ class Htp1:
     RECONNECT_DELAY_INITIAL = 3
     RECONNECT_DELAY_MAX = 60
     MSO_WAIT_TIMEOUT = 3
+    WS_HEARTBEAT = 30  # seconds between pings; a silent drop is noticed and reconnected
     CAL_SLOT_COUNT = 6  # the device always keeps 6 calibration slots (/cal/slots/0..5)
 
     log = getLogger("aiohtp1")
@@ -83,7 +84,7 @@ class Htp1:
         self.log.debug("connect: %s", url)
 
         try:
-            self._websocket = await self.session.ws_connect(url)
+            self._websocket = await self.session.ws_connect(url, heartbeat=self.WS_HEARTBEAT)
 
         except asyncio.CancelledError:
             self.log.debug("connect cancelled: HA shutdown")
@@ -656,9 +657,22 @@ class Htp1:
         if not self._state:
             return []
         try:
-            return [i["label"] for i in self._state["inputs"].values() if i.get("visible")]
+            return [
+                i["label"]
+                for i in self._state["inputs"].values()
+                if i.get("visible") and not self._addon_disabled(i.get("addon"))
+            ]
         except Exception:
             return []
+
+    def _addon_disabled(self, addon) -> bool:
+        """True for an input of an addon that is switched off (the WebUI hides those)."""
+        if not addon:
+            return False
+        svronly = self._state.get("svronly") if self._state else None
+        addons = svronly.get("addons") if isinstance(svronly, dict) else None
+        info = addons.get(addon) if isinstance(addons, dict) else None
+        return isinstance(info, dict) and info.get("enabled") is False
 
 
     @property
