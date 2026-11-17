@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 from typing import Any
 
 import aiohttp
@@ -80,29 +81,62 @@ def _codec_matches(entry: dict, codec: str) -> bool:
     return any(codec_lower in at.lower() for at in audio_types)
 
 
+def _year_matches(entry: dict, year: int | None) -> bool:
+    """Compare a requested year with the catalogue year (stored as a string)."""
+    if year is None:
+        return True
+    try:
+        return int(str(entry.get("year", "")).strip()) == int(year)
+    except ValueError:
+        return False
+
+
+def normalize_title(title: str) -> str:
+    """Normalize a title for exact comparison: case, accents, punctuation, spacing."""
+    text = unicodedata.normalize("NFKD", title or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
+    text = text.replace("&", " and ")
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
 def search_by_title(
     catalogue: list[dict],
     title: str,
     *,
     year: int | None = None,
     codec: str | None = None,
+    exact_first: bool = False,
 ) -> list[dict]:
-    """Search the BEQ catalogue by title (case-insensitive substring match)."""
+    """Search the BEQ catalogue by title (case-insensitive substring match).
+
+    With exact_first, entries whose normalized title (or altTitle) equals the query
+    are returned when there are any; otherwise the substring matches are returned.
+    """
     query = title.lower().strip()
     if not query:
         return []
+    norm_query = normalize_title(title)
 
     results = []
+    exact = []
     for entry in catalogue:
         entry_title = entry.get("title", "").lower()
         if query not in entry_title:
             continue
-        if year is not None and entry.get("year") != year:
+        if not _year_matches(entry, year):
             continue
         if codec and not _codec_matches(entry, codec):
             continue
         results.append(entry)
+        if norm_query and norm_query in (
+            normalize_title(entry.get("title", "")),
+            normalize_title(entry.get("altTitle", "")),
+        ):
+            exact.append(entry)
 
+    if exact_first and exact:
+        return exact
     return results
 
 
@@ -122,6 +156,35 @@ def search_by_tmdb_id(
             continue
         results.append(entry)
     return results
+
+
+def find_by_digest(catalogue: list[dict], digest: str) -> dict | None:
+    """Return the catalogue entry with this digest (a unique id per entry)."""
+    wanted = (digest or "").strip().lower()
+    if not wanted:
+        return None
+    for entry in catalogue:
+        if str(entry.get("digest", "")).lower() == wanted:
+            return entry
+    return None
+
+
+def summarize(entry: dict) -> dict[str, Any]:
+    """A small, JSON-safe description of a catalogue entry (no filter data)."""
+    return {
+        "digest": entry.get("digest"),
+        "title": entry.get("title"),
+        "year": entry.get("year"),
+        "author": entry.get("author"),
+        "edition": entry.get("edition") or None,
+        "audio_types": list(entry.get("audioTypes") or []),
+        "mv": entry.get("mv"),
+        "filter_count": len(entry.get("filters") or []),
+        "note": entry.get("note") or None,
+        "warning": entry.get("warning") or None,
+        "label": entry.get("underlying") or entry.get("title"),
+        "tmdb_id": _extract_entry_tmdb_id(entry),
+    }
 
 
 def best_match(results: list[dict]) -> dict | None:

@@ -10,7 +10,7 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -39,12 +39,22 @@ UPMIX_UI_TO_RAW = {v: k for k, v in UPMIX_RAW_TO_UI.items()}
 
 SERVICE_LOAD_BEQ = "load_beq_filter"
 SERVICE_CLEAR_BEQ = "clear_beq_filter"
+SERVICE_SEARCH_BEQ = "search_beq_filter"
 
 LOAD_BEQ_SCHEMA = {
     vol.Optional("title"): cv.string,
     vol.Optional("tmdb_id"): cv.string,
     vol.Optional("year"): vol.Coerce(int),
     vol.Optional("codec"): cv.string,
+    vol.Optional("digest"): cv.string,
+}
+
+SEARCH_BEQ_SCHEMA = {
+    vol.Optional("title"): cv.string,
+    vol.Optional("tmdb_id"): cv.string,
+    vol.Optional("year"): vol.Coerce(int),
+    vol.Optional("codec"): cv.string,
+    vol.Optional("limit", default=20): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
 }
 
 
@@ -67,6 +77,12 @@ async def async_setup_entry(
         SERVICE_CLEAR_BEQ,
         {},
         "async_clear_beq_filter",
+    )
+    platform.async_register_entity_service(
+        SERVICE_SEARCH_BEQ,
+        SEARCH_BEQ_SCHEMA,
+        "async_search_beq_filter",
+        supports_response=SupportsResponse.ONLY,
     )
 
 
@@ -371,17 +387,58 @@ class Htp1MediaPlayer(MediaPlayerEntity):
 
     # BEQ Services
 
+    async def async_search_beq_filter(
+        self,
+        title: str | None = None,
+        tmdb_id: str | None = None,
+        year: int | None = None,
+        codec: str | None = None,
+        limit: int = 20,
+    ) -> ServiceResponse:
+        """Search the BEQ catalogue and return every match (nothing is loaded).
+
+        Pass a returned digest to load_beq_filter to load that exact entry.
+        """
+        if not title and not tmdb_id:
+            raise HomeAssistantError(
+                "Either 'title' or 'tmdb_id' must be provided"
+            )
+
+        session = async_get_clientsession(self.hass)
+        catalogue = await beq.async_fetch_catalogue(session)
+        if not catalogue:
+            raise HomeAssistantError("Failed to fetch BEQ catalogue")
+
+        if tmdb_id:
+            tmdb_int = beq.parse_tmdb_id(tmdb_id)
+            if tmdb_int is None:
+                raise HomeAssistantError(f"Invalid TMDB ID: {tmdb_id}")
+            results = beq.search_by_tmdb_id(catalogue, tmdb_int, codec=codec)
+        else:
+            results = beq.search_by_title(
+                catalogue, title, year=year, codec=codec, exact_first=True
+            )
+
+        return {
+            "count": len(results),
+            "matches": [beq.summarize(entry) for entry in results[:limit]],
+        }
+
     async def async_load_beq_filter(
         self,
         title: str | None = None,
         tmdb_id: str | None = None,
         year: int | None = None,
         codec: str | None = None,
+        digest: str | None = None,
     ) -> None:
-        """Search the BEQ catalogue and load a bass correction filter."""
-        if not title and not tmdb_id:
+        """Search the BEQ catalogue and load a bass correction filter.
+
+        With digest (from search_beq_filter), that exact catalogue entry is loaded.
+        """
+        if not title and not tmdb_id and not digest:
             raise HomeAssistantError(
-                "Either 'title' or 'tmdb_id' must be provided"
+                "Either 'title', 'tmdb_id' or 'digest' must be provided"
             )
 
         if not self.available:
@@ -393,7 +450,12 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         if not catalogue:
             raise HomeAssistantError("Failed to fetch BEQ catalogue")
 
-        if tmdb_id:
+        if digest:
+            entry = beq.find_by_digest(catalogue, digest)
+            if entry is None:
+                raise HomeAssistantError(f"No BEQ entry with digest {digest}")
+            results = [entry]
+        elif tmdb_id:
             tmdb_int = beq.parse_tmdb_id(tmdb_id)
             if tmdb_int is None:
                 raise HomeAssistantError(f"Invalid TMDB ID: {tmdb_id}")

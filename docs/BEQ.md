@@ -23,7 +23,46 @@ Searches the BEQ catalogue and loads the best matching filter. Give either `titl
 | `year` | Release year. Narrows a title search when several entries match. |
 | `codec` | Audio codec, for example `Atmos`, `DTS:X` or `TrueHD`. Case-insensitive substring match. Works with both `title` and `tmdb_id`. |
 
-If several catalogue entries match, the one with the most filters is used.
+If several catalogue entries match, the one with the most filters is used. To load one specific entry instead, pass its `digest` from `search_beq_filter`:
+
+| Field | Description |
+|---|---|
+| `digest` | Digest of one catalogue entry (returned by `search_beq_filter`). Loads exactly that entry; `title`, `tmdb_id`, `year` and `codec` are then ignored. |
+
+### `monoprice_htp1.search_beq_filter`
+
+Searches the BEQ catalogue and returns every matching entry without loading anything, so you (or a dashboard, a remote or an automation) can choose one. Takes the same `title`, `tmdb_id`, `year` and `codec` fields as `load_beq_filter`, plus `limit` (default 20, max 100). A title search returns the exact title matches when there are any (case, accents and punctuation ignored), otherwise every title that contains the text.
+
+It returns a response (call it with `response_variable`, or tick *Return response* in Developer tools):
+
+```yaml
+media_player.htp_1:
+  count: 3
+  matches:
+    - digest: 847c19c4a09c4bd9ecd4b21e19e3c4da06721af32dae01d06a59188758e19469
+      title: Tenet
+      year: "2020"
+      author: aron7awol
+      edition: null
+      audio_types: ["DTS-HD MA 5.1"]
+      mv: "-6.5"
+      filter_count: 4
+      note: null
+      warning: null
+      label: Tenet (2020) (-6.5 gain) BEQ DTS-HD MA 5.1
+      tmdb_id: 577922
+    # ... one entry per catalogue version (mobe1969, remixmark, ...)
+```
+
+Load the one you picked:
+
+```yaml
+service: monoprice_htp1.load_beq_filter
+target:
+  entity_id: media_player.htp_1
+data:
+  digest: 847c19c4a09c4bd9ecd4b21e19e3c4da06721af32dae01d06a59188758e19469
+```
 
 ### `monoprice_htp1.clear_beq_filter`
 
