@@ -42,6 +42,36 @@
         "codec": {
           "name": "Audio codec",
           "description": "Preferred audio codec to filter results (e.g. Atmos, DTS:X, TrueHD)."
+        },
+        "digest": {
+          "name": "Catalogue entry",
+          "description": "Digest of one catalogue entry (from Search BEQ filters). Loads exactly that entry; title, TMDB ID, year and codec are then ignored."
+        }
+      }
+    },
+    "search_beq_filter": {
+      "name": "Search BEQ filters",
+      "description": "Search the BEQ catalogue and return every matching entry without loading anything. Provide either a movie title or TMDB ID. Pass a returned digest to Load BEQ filter.",
+      "fields": {
+        "title": {
+          "name": "Movie title",
+          "description": "Movie title to search for. Exact title matches are returned when there are any, otherwise all titles containing the text."
+        },
+        "tmdb_id": {
+          "name": "TMDB ID",
+          "description": "The Movie Database (TMDB) ID for the movie or TV show."
+        },
+        "year": {
+          "name": "Year",
+          "description": "Release year to narrow down the results."
+        },
+        "codec": {
+          "name": "Audio codec",
+          "description": "Only return entries for this audio codec (e.g. Atmos, DTS-HD MA, TrueHD)."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of matches to return."
         }
       }
     },

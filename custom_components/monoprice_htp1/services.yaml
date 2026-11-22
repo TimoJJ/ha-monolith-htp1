@@ -27,6 +27,50 @@ load_beq_filter:
       required: false
       selector:
         text:
+    digest:
+      example: "847c19c4a09c4bd9ecd4b21e19e3c4da06721af32dae01d06a59188758e19469"
+      required: false
+      selector:
+        text:
+
+search_beq_filter:
+  target:
+    entity:
+      integration: monoprice_htp1
+      domain: media_player
+  fields:
+    title:
+      example: "Tenet"
+      required: false
+      selector:
+        text:
+    tmdb_id:
+      example: "577922"
+      required: false
+      selector:
+        text:
+    year:
+      example: "2020"
+      required: false
+      selector:
+        number:
+          min: 1900
+          max: 2100
+          mode: box
+    codec:
+      example: "DTS-HD MA"
+      required: false
+      selector:
+        text:
+    limit:
+      example: "20"
+      required: false
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
 
 clear_beq_filter:
   target:
