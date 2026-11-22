@@ -27,7 +27,7 @@ If several catalogue entries match, the one with the most filters is used. To lo
 
 | Field | Description |
 |---|---|
-| `digest` | Digest of one catalogue entry (returned by `search_beq_filter`). Loads exactly that entry; `title`, `tmdb_id`, `year` and `codec` are then ignored. |
+| `digest` | Digest of one catalogue entry (returned by `search_beq_filter`). Loads exactly that entry; `title`, `tmdb_id` and `year` are then ignored. A few titles have several entries with the same filters for another audio type or edition, and those share a digest: give `codec` as well to pick the one whose name shows your audio type. Entries that differ only in edition load the same filters; the name may show the other edition. |
 
 ### `monoprice_htp1.search_beq_filter`
 

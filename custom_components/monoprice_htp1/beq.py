@@ -158,15 +158,31 @@ def search_by_tmdb_id(
     return results
 
 
-def find_by_digest(catalogue: list[dict], digest: str) -> dict | None:
-    """Return the catalogue entry with this digest (a unique id per entry)."""
+def find_by_digest(
+    catalogue: list[dict], digest: str, *, codec: str | None = None
+) -> dict | None:
+    """Return the catalogue entry with this digest.
+
+    The digest identifies the filter set. A few titles have several entries with
+    the same filters for different audio types or editions, so they share a
+    digest; codec then picks the entry whose audio type matches (its label names
+    the audio type). Entries that differ only in edition cannot be told apart:
+    the first one is used, the filters are the same.
+    """
     wanted = (digest or "").strip().lower()
     if not wanted:
         return None
-    for entry in catalogue:
-        if str(entry.get("digest", "")).lower() == wanted:
-            return entry
-    return None
+    matches = [e for e in catalogue if str(e.get("digest", "")).lower() == wanted]
+    if codec and len(matches) > 1:
+        # An exact audio type first ("Atmos" must not pick "DD+ Atmos"), then a substring.
+        wanted_codec = codec.strip().lower()
+        for entry in matches:
+            if any(wanted_codec == at.lower() for at in entry.get("audioTypes", [])):
+                return entry
+        for entry in matches:
+            if _codec_matches(entry, codec):
+                return entry
+    return matches[0] if matches else None
 
 
 def summarize(entry: dict) -> dict[str, Any]:

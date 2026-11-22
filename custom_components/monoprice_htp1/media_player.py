@@ -451,7 +451,7 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             raise HomeAssistantError("Failed to fetch BEQ catalogue")
 
         if digest:
-            entry = beq.find_by_digest(catalogue, digest)
+            entry = beq.find_by_digest(catalogue, digest, codec=codec)
             if entry is None:
                 raise HomeAssistantError(f"No BEQ entry with digest {digest}")
             results = [entry]
