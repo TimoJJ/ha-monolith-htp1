@@ -47,6 +47,7 @@ LOAD_BEQ_SCHEMA = {
     vol.Optional("year"): vol.Coerce(int),
     vol.Optional("codec"): cv.string,
     vol.Optional("digest"): cv.string,
+    vol.Optional("edition"): cv.string,
 }
 
 SEARCH_BEQ_SCHEMA = {
@@ -431,10 +432,12 @@ class Htp1MediaPlayer(MediaPlayerEntity):
         year: int | None = None,
         codec: str | None = None,
         digest: str | None = None,
+        edition: str | None = None,
     ) -> None:
         """Search the BEQ catalogue and load a bass correction filter.
 
         With digest (from search_beq_filter), that exact catalogue entry is loaded.
+        edition narrows a search, and picks between entries that share a digest.
         """
         if not title and not tmdb_id and not digest:
             raise HomeAssistantError(
@@ -451,7 +454,7 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             raise HomeAssistantError("Failed to fetch BEQ catalogue")
 
         if digest:
-            entry = beq.find_by_digest(catalogue, digest, codec=codec)
+            entry = beq.find_by_digest(catalogue, digest, codec=codec, edition=edition)
             if entry is None:
                 raise HomeAssistantError(f"No BEQ entry with digest {digest}")
             results = [entry]
@@ -465,12 +468,17 @@ class Htp1MediaPlayer(MediaPlayerEntity):
                 catalogue, title, year=year, codec=codec
             )
 
+        if not digest:
+            results = beq.filter_by_edition(results, edition)
+
         if not results:
             search_desc = f"TMDB ID {tmdb_id}" if tmdb_id else f"'{title}'"
             if year:
                 search_desc += f" ({year})"
             if codec:
                 search_desc += f" [{codec}]"
+            if edition:
+                search_desc += f" [{edition}]"
             raise HomeAssistantError(
                 f"No BEQ filter found for {search_desc}"
             )

@@ -32,6 +32,11 @@ load_beq_filter:
       required: false
       selector:
         text:
+    edition:
+      example: "Extended Cut"
+      required: false
+      selector:
+        text:
 
 search_beq_filter:
   target:

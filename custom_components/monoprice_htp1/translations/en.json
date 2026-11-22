@@ -45,7 +45,11 @@
         },
         "digest": {
           "name": "Catalogue entry",
-          "description": "Digest of one catalogue entry (from Search BEQ filters). Loads exactly that entry; title, TMDB ID and year are then ignored. A few entries share a digest (same filters for another audio type or edition); the audio codec then picks the one for that audio type."
+          "description": "Digest of one catalogue entry (from Search BEQ filters). Loads exactly that entry; title, TMDB ID and year are then ignored. A few entries share a digest (same filters for another audio type or edition); the audio codec and edition then pick between them."
+        },
+        "edition": {
+          "name": "Edition",
+          "description": "Edition of the movie, for example Extended Cut or Director's Cut. Narrows a title or TMDB search, and picks between entries that share a digest."
         }
       }
     },

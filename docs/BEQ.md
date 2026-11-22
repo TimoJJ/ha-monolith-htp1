@@ -22,12 +22,13 @@ Searches the BEQ catalogue and loads the best matching filter. Give either `titl
 | `tmdb_id` | The Movie Database ID: a number, a string, or a full themoviedb.org URL. If both `tmdb_id` and `title` are given, `tmdb_id` is used and `title` and `year` are ignored. |
 | `year` | Release year. Narrows a title search when several entries match. |
 | `codec` | Audio codec, for example `Atmos`, `DTS:X` or `TrueHD`. Case-insensitive substring match. Works with both `title` and `tmdb_id`. |
+| `edition` | Edition, for example `Extended Cut` or `Director's Cut`. An exact edition first, otherwise editions that contain the text; case is ignored. Works with `title`, `tmdb_id` and `digest`. |
 
 If several catalogue entries match, the one with the most filters is used. To load one specific entry instead, pass its `digest` from `search_beq_filter`:
 
 | Field | Description |
 |---|---|
-| `digest` | Digest of one catalogue entry (returned by `search_beq_filter`). Loads exactly that entry; `title`, `tmdb_id` and `year` are then ignored. A few titles have several entries with the same filters for another audio type or edition, and those share a digest: give `codec` as well to pick the one whose name shows your audio type. Entries that differ only in edition load the same filters; the name may show the other edition. |
+| `digest` | Digest of one catalogue entry (returned by `search_beq_filter`). Loads exactly that entry; `title`, `tmdb_id` and `year` are then ignored. A few titles have several entries with the same filters for another audio type or edition, and those share a digest: give `codec` and `edition` as well to pick the one whose name shows your audio type and edition. Without `edition`, the entry without an edition is preferred. |
 
 ### `monoprice_htp1.search_beq_filter`
 

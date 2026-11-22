@@ -158,21 +158,47 @@ def search_by_tmdb_id(
     return results
 
 
+def filter_by_edition(entries: list[dict], edition: str | None) -> list[dict]:
+    """Keep the entries of this edition (for example "Director's Cut").
+
+    An exact edition first, otherwise the editions that contain the text; both
+    ignore case. No edition given returns the entries unchanged.
+    """
+    wanted = (edition or "").strip().lower()
+    if not wanted:
+        return entries
+    exact = [e for e in entries if str(e.get("edition") or "").strip().lower() == wanted]
+    if exact:
+        return exact
+    return [e for e in entries if wanted in str(e.get("edition") or "").lower()]
+
+
 def find_by_digest(
-    catalogue: list[dict], digest: str, *, codec: str | None = None
+    catalogue: list[dict],
+    digest: str,
+    *,
+    codec: str | None = None,
+    edition: str | None = None,
 ) -> dict | None:
     """Return the catalogue entry with this digest.
 
     The digest identifies the filter set. A few titles have several entries with
     the same filters for different audio types or editions, so they share a
-    digest; codec then picks the entry whose audio type matches (its label names
-    the audio type). Entries that differ only in edition cannot be told apart:
-    the first one is used, the filters are the same.
+    digest; edition and codec then pick the entry whose label names that edition
+    and audio type. Without an edition the plain release (no edition) is
+    preferred. When nothing matches, the first entry is used: the filters are
+    the same.
     """
     wanted = (digest or "").strip().lower()
     if not wanted:
         return None
     matches = [e for e in catalogue if str(e.get("digest", "")).lower() == wanted]
+    if len(matches) > 1:
+        if (edition or "").strip():
+            matches = filter_by_edition(matches, edition) or matches
+        else:
+            # No edition asked for: prefer the entries without one (the plain release).
+            matches = [e for e in matches if not str(e.get("edition") or "").strip()] or matches
     if codec and len(matches) > 1:
         # An exact audio type first ("Atmos" must not pick "DD+ Atmos"), then a substring.
         wanted_codec = codec.strip().lower()
