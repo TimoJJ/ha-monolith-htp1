@@ -14,6 +14,8 @@ import aiohttp
 
 FILTER_TYPE_MAP = {"PeakingEQ": 0, "LowShelf": 1, "HighShelf": 2}
 BEQ_SLOT_COUNT = 16  # Total PEQ slots (0-15)
+# Limits of a BEQ filter on the unit's PEQ, as the WebUI applies them (restorePEQ*/setPEQQuality).
+BEQ_LIMITS = {"freq": (10, 20000), "gain": (-99, 20), "q": (0.1, 10)}
 
 
 def _num(v):
@@ -1583,7 +1585,8 @@ class Htp1:
 
         Follows the WebUI (beq/applyPlan.js): the whole entry or nothing. Raises
         BeqError when BEQ is locked, a filter cannot be used, or the free PEQ bands
-        of a channel do not fit all filters.
+        of a channel do not fit all filters. Frequency, gain and Q beyond BEQ_LIMITS
+        are limited to them.
         """
         cal = self._state.get("cal") if self._state else None
         cal = cal if isinstance(cal, dict) else {}
@@ -1608,6 +1611,12 @@ class Htp1:
                     or not math.isfinite(value)
                 ):
                     raise BeqError(f"This BEQ entry has an invalid {key} value ({value}).")
+                # A value beyond what the PEQ takes is limited, not refused.
+                low, high = BEQ_LIMITS[key]
+                limited = min(max(value, low), high)
+                if limited != value:
+                    self.log.info("BEQ %s %s limited to %s", key, value, limited)
+                    values[key] = limited
             count = filt.get("count", 1)
             if (
                 isinstance(count, bool)

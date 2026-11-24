@@ -145,6 +145,7 @@ A similar automation works with Kodi. The TMDB ID can come from attributes expos
 - Any BEQ filter that was loaded earlier is cleared first.
 - Bands that hold your own filters are kept. A band counts as free when it is not bypassed, its gain is 0 and its filter type is peaking or shelf, or when it holds an earlier BEQ filter.
 - The PEQ has 16 bands. A catalogue entry is loaded completely or not at all: if a subwoofer channel does not have enough free bands for every filter, nothing is changed and the action fails.
+- A few catalogue entries have values beyond what the HTP-1 PEQ takes. They are limited: frequency to 10-20000 Hz, gain to -99...+20 dB and Q to 0.1-10.
 - The PEQ is switched on after the filter is loaded.
 - Clearing and loading are sent to the HTP-1 as one change.
 - The filter name is stored so that the HTP-1 WebUI can show it.
