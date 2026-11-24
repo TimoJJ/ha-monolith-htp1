@@ -143,8 +143,8 @@ A similar automation works with Kodi. The TMDB ID can come from attributes expos
 
 - The filters are written to the PEQ slots of the subwoofer channels. If the PEQ location is **pre**, only the first subwoofer channel (shown as LFE) is used. If it is **post**, every subwoofer channel that is present is used.
 - Any BEQ filter that was loaded earlier is cleared first.
-- Slots that hold your own filters are skipped. A slot counts as free when its gain is 0 and its filter type is not all-pass, low-pass or high-pass.
-- The PEQ has 16 slots. If the catalogue entry has more filters than there are free slots, the extra filters are skipped and a warning is written to the Home Assistant log.
+- Bands that hold your own filters are kept. A band counts as free when it is not bypassed, its gain is 0 and its filter type is peaking or shelf, or when it holds an earlier BEQ filter.
+- The PEQ has 16 bands. A catalogue entry is loaded completely or not at all: if a subwoofer channel does not have enough free bands for every filter, nothing is changed and the action fails.
 - The PEQ is switched on after the filter is loaded.
 - Clearing and loading are sent to the HTP-1 as one change.
 - The filter name is stored so that the HTP-1 WebUI can show it.
@@ -159,6 +159,9 @@ The services fail with an error in Home Assistant when:
 - the catalogue cannot be downloaded,
 - the TMDB ID cannot be read,
 - no catalogue entry matches, or the matching entry has no filters,
+- BEQ is locked on the HTP-1 (PEQ location post with a Dirac Bass Control or ART filter), or the Dirac calibration tool is connected,
+- a subwoofer channel does not have enough free PEQ bands for the whole entry,
+- the entry uses a filter type the HTP-1 PEQ does not have, or a value that is not a number,
 - the filter cannot be written to the HTP-1.
 
 ## Credits

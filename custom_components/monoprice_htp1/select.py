@@ -7,7 +7,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .aiohtp1 import Htp1
-from .const import DIRAC_FILTER_SHORT, DOMAIN, ui_lock_signal
+from .const import DIRAC_BUSY_MESSAGE, DIRAC_FILTER_SHORT, DOMAIN, ui_lock_signal
 from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
@@ -87,6 +87,10 @@ class Htp1InputSelect(Htp1BaseSelect):
             pwr = getattr(self._htp1, "power", None)
             if pwr is False or pwr == 0:
                 return
+
+        # The unit refuses an input change while a Dirac switch runs.
+        if self._htp1.dirac_busy:
+            raise HomeAssistantError(DIRAC_BUSY_MESSAGE)
 
         async with self._htp1:
             self._htp1.input = option
@@ -379,6 +383,9 @@ class Htp1DiracActiveSelect(Htp1BaseSelect):
         raw = self._UI_TO_RAW.get(option)
         if raw is None:
             return
+
+        if self._htp1.dirac_busy:
+            raise HomeAssistantError(DIRAC_BUSY_MESSAGE)
 
         async with self._htp1:
             self._htp1.dirac_active = raw
@@ -730,9 +737,7 @@ class Htp1CalibrationSlotSelect(Htp1BaseSelect):
         if index == self._htp1.cal_current_dirac_slot:
             return
         if self._htp1.dirac_busy:
-            raise HomeAssistantError(
-                "The HTP-1 is still changing the Dirac slot. Try again when it has finished."
-            )
+            raise HomeAssistantError(DIRAC_BUSY_MESSAGE)
 
         async with self._htp1:
             self._htp1.cal_current_dirac_slot = index

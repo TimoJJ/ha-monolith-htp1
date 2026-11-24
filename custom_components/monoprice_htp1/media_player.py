@@ -18,8 +18,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from . import beq
-from .aiohtp1 import Htp1
-from .const import DOMAIN, LOGGER, ui_lock_signal
+from .aiohtp1 import BeqError, Htp1
+from .const import DIRAC_BUSY_MESSAGE, DOMAIN, LOGGER, ui_lock_signal
 from .entity import htp1_device_info
 from .helpers import schedule_entity_update_threadsafe
 
@@ -362,6 +362,9 @@ class Htp1MediaPlayer(MediaPlayerEntity):
     async def async_select_source(self, source: str) -> None:
         if not self.available:
             return
+        # The unit refuses an input change while a Dirac switch runs.
+        if self._htp1.dirac_busy:
+            raise HomeAssistantError(DIRAC_BUSY_MESSAGE)
         async with self._htp1 as tx:
             tx.input = source
             await tx.commit()
@@ -500,7 +503,10 @@ class Htp1MediaPlayer(MediaPlayerEntity):
             len(results),
         )
 
-        success = await self._htp1.load_beq(beq_label, filters)
+        try:
+            success = await self._htp1.load_beq(beq_label, filters)
+        except BeqError as err:
+            raise HomeAssistantError(str(err)) from err
         if not success:
             raise HomeAssistantError("Failed to load BEQ filter on device")
 
