@@ -12,6 +12,8 @@ from typing import Any
 import aiodns
 import aiohttp
 
+from .peak import PeakMonitor
+
 FILTER_TYPE_MAP = {"PeakingEQ": 0, "LowShelf": 1, "HighShelf": 2}
 BEQ_SLOT_COUNT = 16  # Total PEQ slots (0-15)
 # Limits of a BEQ filter on the unit's PEQ, as the WebUI applies them (restorePEQ*/setPEQQuality).
@@ -72,6 +74,9 @@ class Htp1:
         self.last_device_error: str | None = None
 
         self.reset()
+
+        # Peak level / clipping from the meter feed; reads only while a peak entity needs it.
+        self.peak = PeakMonitor(self)
 
     def reset(self):
         self._state = None
@@ -237,6 +242,7 @@ class Htp1:
 
     async def stop(self):
         self._ha_stopping = True
+        await self.peak.stop()
         await self._stop_connect()
         await self._disconnect()
         self.reset()

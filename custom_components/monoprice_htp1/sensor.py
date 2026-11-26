@@ -14,6 +14,7 @@ from homeassistant.helpers.entity import EntityCategory
 from .aiohtp1 import Htp1
 from .const import DIRAC_FILTER_NAMES, DOMAIN
 from .entity import htp1_device_info
+from .peak import PEAK_SUBJECT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -658,6 +659,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
         for definition in SENSOR_DEFINITIONS
     ]
 
+    sensors += [
+        Htp1PeakSensor(htp1, entry.entry_id, "peak_level"),
+        Htp1PeakSensor(htp1, entry.entry_id, "peak_channel"),
+    ]
+
     # Request an immediate first update so entities don't sit at unknown.
     async_add_entities(sensors, True)
 
@@ -741,4 +747,56 @@ class Htp1Sensor(SensorEntity):
 
     def _handle_update(self, value=None):
         # Schedule a state update on the HA loop.
+        self.async_schedule_update_ha_state()
+
+
+class Htp1PeakSensor(SensorEntity):
+    """Highest output level of the last window, or the channel that had it.
+
+    Disabled by default: while one of the peak entities is enabled and the unit
+    is on, the integration reads the unit's meter feed (see peak.py).
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, htp1, entry_id: str, key: str) -> None:
+        self._htp1 = htp1
+        self._key = key
+        self._attr_unique_id = f"{entry_id}_{key}"
+        self._attr_device_info = htp1_device_info(entry_id)
+        if key == "peak_level":
+            self._attr_name = "Peak Level"
+            self._attr_icon = "mdi:waveform"
+            self._attr_native_unit_of_measurement = "dBFS"
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+        else:
+            self._attr_name = "Peak Channel"
+            self._attr_icon = "mdi:speaker"
+        self._unsubs: list[Callable[[], None]] = []
+
+    @property
+    def available(self) -> bool:
+        return self._htp1.connected and self._htp1.peak.value is not None
+
+    @property
+    def native_value(self):
+        value = self._htp1.peak.value
+        if value is None:
+            return None
+        return value["level"] if self._key == "peak_level" else value["channel"]
+
+    async def async_added_to_hass(self) -> None:
+        for subject in (PEAK_SUBJECT, "#connection"):
+            self._unsubs.append(self._htp1.subscribe(subject, self._handle_update))
+        self._htp1.peak.acquire()
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._htp1.peak.release()
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs = []
+
+    def _handle_update(self, value=None) -> None:
         self.async_schedule_update_ha_state()

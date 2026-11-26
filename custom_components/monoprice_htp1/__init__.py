@@ -12,7 +12,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .aiohtp1 import Htp1
 from .const import DOMAIN
 
-PLATFORMS = ["sensor", "number", "switch", "select", "button", "media_player"]
+PLATFORMS = ["sensor", "binary_sensor", "number", "switch", "select", "button", "media_player"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

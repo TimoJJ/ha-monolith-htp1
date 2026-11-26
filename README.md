@@ -41,6 +41,10 @@ After the integration is added, the entities appear and update in about 10-15 se
 
 The integration can load [BEQ](https://beqcatalogue.readthedocs.io/) bass correction filters onto the HTP-1 with the `monoprice_htp1.load_beq_filter` and `monoprice_htp1.clear_beq_filter` services. See [docs/BEQ.md](https://github.com/TimoJJ/ha-monolith-htp1/blob/main/docs/BEQ.md) for usage and automation examples.
 
+## Peak level and clipping
+
+Three entities report how hot the HTP-1 outputs run: **Peak Level** (highest output level in dBFS over a 2 s window), **Peak Channel** (the output that had it) and **Clipping** (on when an output clipped, and for 10 s after it; the attributes name the outputs and the level). They are disabled by default. While one of them is enabled and the HTP-1 is on, the integration reads the unit's output meter feed (port 8081). They need an HTP-1 firmware with that feed (the live channel level meters of the WebUI); on older firmware they stay unavailable.
+
 ## Screens
 
 
