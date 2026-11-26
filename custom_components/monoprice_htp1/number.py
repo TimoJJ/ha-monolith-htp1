@@ -71,9 +71,11 @@ NUMBER_DEFINITIONS = [
         "key": "bass_frequency",
         "name": "Bass Corner Frequency",
         "path": "/eq/bass/freq",
+        # Same range as the WebUI; slider kept although it now has > 256 steps.
         "min": 20,
-        "max": 200,
+        "max": 500,
         "step": 1,
+        "mode": "slider",
         "get_fn": lambda h: h.bass_frequency,
         "set_fn": lambda h, v: setattr(h, "bass_frequency", v),
     },
@@ -91,7 +93,8 @@ NUMBER_DEFINITIONS = [
         "key": "treble_frequency",
         "name": "Treble Corner Frequency",
         "path": "/eq/treble/freq",
-        "min": 2500,
+        # Same range and step as the WebUI (htp1-custom-controller ToneControl/ToneChart).
+        "min": 600,
         "max": 8000,
         "step": 100,
         "get_fn": lambda h: h.treble_frequency,
@@ -359,7 +362,7 @@ NUMBER_DEFINITIONS = [
 def build_htp1_numbers(htp1, entry_id: str):
     entities = []
     for cfg in NUMBER_DEFINITIONS:
-        mode = NumberMode.BOX if cfg.get("mode") == "box" else None
+        mode = {"box": NumberMode.BOX, "slider": NumberMode.SLIDER}.get(cfg.get("mode"))
         entities.append(
             Htp1Number(
                 htp1=htp1,
