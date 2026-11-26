@@ -45,6 +45,8 @@ The integration can load [BEQ](https://beqcatalogue.readthedocs.io/) bass correc
 
 Three entities report how hot the HTP-1 outputs run: **Peak Level** (highest output level in dBFS over a 2 s window), **Peak Channel** (the output that had it) and **Clipping** (on when an output clipped, and for 10 s after it; the attributes name the outputs and the level). They are disabled by default. While one of them is enabled and the HTP-1 is on, the integration reads the unit's output meter feed (port 8081). They need an HTP-1 firmware with that feed (the live channel level meters of the WebUI); on older firmware they stay unavailable.
 
+Peak Level and Peak Channel can change every 2 s while audio plays and add many rows to the Home Assistant database; if you only want to know when the outputs clip, enable Clipping alone. To keep the peak sensors out of the history, exclude them in the recorder configuration.
+
 ## Screens
 
 
