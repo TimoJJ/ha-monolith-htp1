@@ -101,6 +101,19 @@ NUMBER_DEFINITIONS = [
         "set_fn": lambda h, v: setattr(h, "treble_frequency", v),
     },
     {
+        "key": "auro_strength",
+        "name": "AuroMatic Strength",
+        "path": "/upmix/auro/strength",
+        # Same range as the WebUI slider; the WebUI default is 13.
+        "min": 1,
+        "max": 16,
+        "step": 1,
+        "mode": "slider",
+        "icon": "mdi:surround-sound",
+        "get_fn": lambda h: h.auro_strength,
+        "set_fn": lambda h, v: setattr(h, "auro_strength", int(v)),
+    },
+    {
         "key": "lipsync_delay",
         "name": "Lipsync Delay",
         "path": "/cal/lipsync",

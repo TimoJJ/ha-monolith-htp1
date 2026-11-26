@@ -1032,6 +1032,37 @@ class Htp1:
             raise AioHtp1Exception("no transaction in progress")
         self._tx["/upmix/auro/highSides"] = "on" if value else "off"
 
+    def _auro(self, key: str):
+        path = f"/upmix/auro/{key}"
+        if self._tx is not None and path in self._tx:
+            return self._tx[path]
+        try:
+            return self._state["upmix"]["auro"][key]
+        except (KeyError, TypeError):
+            return None
+
+    @property
+    def auro_preset(self) -> int | None:
+        """AuroMatic preset: 0 Small, 1 Medium, 2 Large, 3 Movie, 4 Speech."""
+        return self._auro("preset")
+
+    @auro_preset.setter
+    def auro_preset(self, value: int):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/upmix/auro/preset"] = int(value)
+
+    @property
+    def auro_strength(self) -> int | None:
+        """AuroMatic strength, 1-16 (default 13)."""
+        return self._auro("strength")
+
+    @auro_strength.setter
+    def auro_strength(self, value):
+        if self._tx is None:
+            raise AioHtp1Exception("no transaction in progress")
+        self._tx["/upmix/auro/strength"] = int(value)
+
     @property
     def loudness_cal(self):
         if not self._state:

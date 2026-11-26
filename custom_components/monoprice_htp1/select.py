@@ -26,6 +26,7 @@ async def async_setup_entry(
         Htp1CalibrationSlotSelect(htp1, entry),
         Htp1DiracActiveSelect(htp1, entry),
         Htp1NightModeSelect(htp1, entry),
+        Htp1AuroPresetSelect(htp1, entry),
         Htp1DialnormSelect(htp1, entry),
         Htp1ShakerPresetSelect(htp1, entry),
     ]
@@ -750,6 +751,81 @@ class Htp1CalibrationSlotSelect(Htp1BaseSelect):
 
         for path in (*Htp1.CAL_SLOT_PATHS, "/cal/num_dirac_slots", "/cal/diracSwitch",
                      "/powerIsOn", "#connection"):
+            unsub = self._htp1.subscribe(path, self._handle_update)
+            if callable(unsub):
+                self._unsubs.append(unsub)
+
+        self._unsub_ui_lock = async_dispatcher_connect(
+            self.hass, ui_lock_signal(self._entry.entry_id), self._handle_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in getattr(self, "_unsubs", []):
+            if callable(unsub):
+                try:
+                    unsub()
+                except Exception:
+                    pass
+
+        unsub = getattr(self, "_unsub_ui_lock", None)
+        if callable(unsub):
+            unsub()
+
+    def _handle_update(self, *args):
+        schedule_entity_update_threadsafe(self)
+
+
+class Htp1AuroPresetSelect(Htp1BaseSelect):
+    """AuroMatic upmixer preset (/upmix/auro/preset), as in the WebUI."""
+
+    _attr_name = "AuroMatic Preset"
+    _attr_icon = "mdi:surround-sound"
+
+    _RAW_TO_UI: dict[int, str] = {
+        0: "Small",
+        1: "Medium",
+        2: "Large",
+        3: "Movie",
+        4: "Speech",
+    }
+    _UI_TO_RAW: dict[str, int] = {v: k for k, v in _RAW_TO_UI.items()}
+
+    def __init__(self, htp1, entry: ConfigEntry) -> None:
+        super().__init__(htp1, entry)
+        self._attr_unique_id = f"{entry.entry_id}_auro_preset"
+
+    @property
+    def options(self) -> list[str]:
+        return list(self._RAW_TO_UI.values())
+
+    @property
+    def current_option(self) -> str | None:
+        raw = self._htp1.auro_preset
+        try:
+            return self._RAW_TO_UI.get(int(raw))
+        except (TypeError, ValueError):
+            return None
+
+    async def async_select_option(self, option: str) -> None:
+        if getattr(self._htp1, "lock_controls_when_off", True):
+            pwr = getattr(self._htp1, "power", None)
+            if pwr is False or pwr == 0:
+                return
+
+        raw = self._UI_TO_RAW.get(option)
+        if raw is None:
+            raise HomeAssistantError(f"Unknown AuroMatic preset: {option}")
+
+        async with self._htp1:
+            self._htp1.auro_preset = raw
+            await self._htp1.commit()
+
+        schedule_entity_update_threadsafe(self)
+
+    async def async_added_to_hass(self):
+        self._unsubs = []
+
+        for path in ("/upmix/auro/preset", "/upmix/auro", "/upmix", "/powerIsOn", "#connection"):
             unsub = self._htp1.subscribe(path, self._handle_update)
             if callable(unsub):
                 self._unsubs.append(unsub)
